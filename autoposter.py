@@ -21,16 +21,32 @@ def main():
         print(f"⚠️ Fout bij ophalen lijst: {e}")
         return
 
+    # logbestand voor al gerepostte posts
+    repost_log = "reposted.txt"
+    if os.path.exists(repost_log):
+        with open(repost_log, "r") as f:
+            done = set(f.read().splitlines())
+    else:
+        done = set()
+
     # bekijk de laatste posts van elk lid en repost
     for member in members:
         handle = member.subject.handle
         print(f"🔎 Controleer posts van @{handle}")
 
         try:
-            feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 3})
+            feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 5})
             for post in feed.feed:
+                # Sla replies over
+                if getattr(post.post.record, "reply", None):
+                    continue
+
                 uri = post.post.uri
                 cid = post.post.cid
+
+                # Sla dubbele reposts over
+                if uri in done:
+                    continue
 
                 viewer = getattr(post, "viewer", None)
                 already_reposted = getattr(viewer, "repost", None)
@@ -45,11 +61,16 @@ def main():
                             }
                         )
                         print(f"🔁 Gerepost: {uri}")
+                        done.add(uri)
                         time.sleep(2)
                     except Exception as e:
                         print(f"⚠️ Fout bij repost @{handle}: {e}")
         except Exception as e:
             print(f"⚠️ Fout bij ophalen feed @{handle}: {e}")
+
+    # log bijwerken
+    with open(repost_log, "w") as f:
+        f.write("\n".join(done))
 
     print("✅ Klaar met run!")
 
