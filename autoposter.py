@@ -38,6 +38,7 @@ def main():
                 if not already_reposted:
                     try:
                         client.app.bsky.feed.repost.create(
+                            repo=client.me.did,
                             record={
                                 "subject": {"uri": uri, "cid": cid},
                                 "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
