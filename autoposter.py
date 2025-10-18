@@ -44,26 +44,6 @@ def main():
                 if getattr(post.post.record, "reply", None):
                     continue
 
-                # controleer of post media (foto of video) bevat
-                embed = getattr(post.post, "embed", None)
-                has_media = False
-
-                if embed:
-                    embed_type = getattr(embed, "$type", "")
-                    if "app.bsky.embed.images" in embed_type or "app.bsky.embed.video" in embed_type:
-                        has_media = True
-                    elif embed_type == "app.bsky.embed.recordWithMedia":
-                        # sommige posts hebben recordWithMedia-structuur (combinatie)
-                        media = getattr(embed, "media", None)
-                        if media and (
-                            "app.bsky.embed.images" in getattr(media, "$type", "")
-                            or "app.bsky.embed.video" in getattr(media, "$type", "")
-                        ):
-                            has_media = True
-
-                if not has_media:
-                    continue  # geen foto of video, overslaan
-
                 uri = post.post.uri
                 cid = post.post.cid
 
@@ -84,7 +64,7 @@ def main():
                                 "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                             }
                         )
-                        print(f"📸 Gerepost (met foto/video): {uri}")
+                        print(f"🔁 Gerepost: {uri}")
                         done.add(uri)
                         time.sleep(2)
 
