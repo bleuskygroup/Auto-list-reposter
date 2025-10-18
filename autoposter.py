@@ -32,7 +32,7 @@ def main():
     # bekijk de laatste posts van elk lid en repost (nieuwste eerst)
     for member in members:
         handle = member.subject.handle
-        print(f"🔎 Controleer posts van @{handle}")
+        print(f"🔎 Controleer originele posts van @{handle}")
 
         try:
             feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 5})
@@ -40,9 +40,19 @@ def main():
 
             # van oud → nieuw zodat nieuwste laatst komt
             for post in reversed(posts):
+                record = post.post.record
+
                 # sla replies over
-                if getattr(post.post.record, "reply", None):
+                if getattr(record, "reply", None):
                     continue
+
+                # sla reposts van anderen over
+                embed = getattr(post.post, "embed", None)
+                if embed:
+                    embed_type = getattr(embed, "$type", "")
+                    # als embed een 'record' bevat, is dit meestal een repost of quote
+                    if "app.bsky.embed.record" in embed_type and "recordWithMedia" not in embed_type:
+                        continue  # overslaan, dit is een repost/quote van iemand anders
 
                 uri = post.post.uri
                 cid = post.post.cid
@@ -64,7 +74,7 @@ def main():
                                 "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                             }
                         )
-                        print(f"🔁 Gerepost: {uri}")
+                        print(f"🟦 Gerepost originele post: {uri}")
                         done.add(uri)
                         time.sleep(2)
 
