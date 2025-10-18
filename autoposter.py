@@ -33,8 +33,9 @@ def main():
                 cid = post.post.cid
 
                 viewer = getattr(post, "viewer", None)
-already_reposted = getattr(viewer, "repost", None)
-if not already_reposted:
+                already_reposted = getattr(viewer, "repost", None)
+
+                if not already_reposted:
                     try:
                         client.app.bsky.feed.repost.create(
                             record={
