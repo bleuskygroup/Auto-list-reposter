@@ -29,25 +29,45 @@ def main():
     else:
         done = set()
 
-    # bekijk de laatste posts van elk lid en repost (NIEUW: nieuwste eerst)
+    # bekijk de laatste posts van elk lid en repost (nieuwste eerst)
     for member in members:
         handle = member.subject.handle
         print(f"🔎 Controleer posts van @{handle}")
 
         try:
             feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 5})
-
-            # 👉 Draai de volgorde om: we lopen van nieuw → oud
             posts = list(feed.feed)
+
+            # van oud → nieuw zodat nieuwste laatst komt
             for post in reversed(posts):
-                # Sla replies over
+                # sla replies over
                 if getattr(post.post.record, "reply", None):
                     continue
+
+                # controleer of post media (foto of video) bevat
+                embed = getattr(post.post, "embed", None)
+                has_media = False
+
+                if embed:
+                    embed_type = getattr(embed, "$type", "")
+                    if "app.bsky.embed.images" in embed_type or "app.bsky.embed.video" in embed_type:
+                        has_media = True
+                    elif embed_type == "app.bsky.embed.recordWithMedia":
+                        # sommige posts hebben recordWithMedia-structuur (combinatie)
+                        media = getattr(embed, "media", None)
+                        if media and (
+                            "app.bsky.embed.images" in getattr(media, "$type", "")
+                            or "app.bsky.embed.video" in getattr(media, "$type", "")
+                        ):
+                            has_media = True
+
+                if not has_media:
+                    continue  # geen foto of video, overslaan
 
                 uri = post.post.uri
                 cid = post.post.cid
 
-                # Sla dubbele reposts over
+                # sla dubbele reposts over
                 if uri in done:
                     continue
 
@@ -56,6 +76,7 @@ def main():
 
                 if not already_reposted:
                     try:
+                        # Repost
                         client.app.bsky.feed.repost.create(
                             repo=client.me.did,
                             record={
@@ -63,9 +84,26 @@ def main():
                                 "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                             }
                         )
-                        print(f"🔁 Gerepost: {uri}")
+                        print(f"📸 Gerepost (met foto/video): {uri}")
                         done.add(uri)
                         time.sleep(2)
+
+                        # Like (alleen als nog niet geliked)
+                        already_liked = getattr(viewer, "like", None)
+                        if not already_liked:
+                            try:
+                                client.app.bsky.feed.like.create(
+                                    repo=client.me.did,
+                                    record={
+                                        "subject": {"uri": uri, "cid": cid},
+                                        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                                    }
+                                )
+                                print(f"❤️ Geliked: {uri}")
+                                time.sleep(1)
+                            except Exception as e_like:
+                                print(f"⚠️ Fout bij liken @{handle}: {e_like}")
+
                     except Exception as e:
                         print(f"⚠️ Fout bij repost @{handle}: {e}")
         except Exception as e:
