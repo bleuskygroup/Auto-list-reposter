@@ -29,14 +29,17 @@ def main():
     else:
         done = set()
 
-    # bekijk de laatste posts van elk lid en repost
+    # bekijk de laatste posts van elk lid en repost (NIEUW: nieuwste eerst)
     for member in members:
         handle = member.subject.handle
         print(f"🔎 Controleer posts van @{handle}")
 
         try:
             feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 5})
-            for post in feed.feed:
+
+            # 👉 Draai de volgorde om: we lopen van nieuw → oud
+            posts = list(feed.feed)
+            for post in reversed(posts):
                 # Sla replies over
                 if getattr(post.post.record, "reply", None):
                     continue
