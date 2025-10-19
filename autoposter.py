@@ -4,13 +4,16 @@ import time
 from datetime import datetime, timedelta
 
 LIST_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.graph.list/3m3iga6wnmz2p"
-MAX_PER_USER = 5
-MAX_TOTAL = 25
-DAYS_LIMIT = 7
+EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
 
-def log(msg):
-    now = datetime.utcnow().strftime("[%H:%M:%S]")
-    print(f"{now} {msg}")
+MAX_POSTS_PER_RUN = 25
+MAX_PER_USER = 5
+MAX_AGE_DAYS = 7
+
+
+def log(msg: str):
+    print(f"[{datetime.utcnow().strftime('%H:%M:%S')}] {msg}")
+
 
 def main():
     username = os.environ["BSKY_USERNAME"]
@@ -20,96 +23,87 @@ def main():
     client.login(username, password)
     log(f"✅ Ingelogd als {username}")
 
-    # lijst ophalen
-    members = client.app.bsky.graph.get_list({"list": LIST_URI}).items
-    log(f"📋 {len(members)} gebruikers gevonden.")
+    try:
+        members = client.app.bsky.graph.get_list({"list": LIST_URI}).items
+        log(f"📋 {len(members)} gebruikers gevonden.")
+    except Exception as e:
+        log(f"⚠️ Fout bij ophalen lijst: {e}")
+        return
 
-    # repostlog laden
-    repost_log = "reposted.txt"
-    if os.path.exists(repost_log):
-        with open(repost_log, "r") as f:
-            done = set(f.read().splitlines())
-    else:
-        done = set()
+    posts_to_check = []
+    cutoff = datetime.utcnow() - timedelta(days=MAX_AGE_DAYS)
 
-    cutoff = datetime.utcnow() - timedelta(days=DAYS_LIMIT)
-    all_posts = []
-
-    # Posts ophalen
     for member in members:
         handle = member.subject.handle
         log(f"🔎 Check feed @{handle}")
+
         try:
-            feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 10}).feed
-            for post in feed:
-                uri = post.post.uri
-                cid = post.post.cid
-                record = post.post.record
-                created_at = getattr(record, "createdAt", None) or getattr(post.post, "indexedAt", None)
-                if not created_at:
-                    continue
-
-                created_time = datetime.strptime(created_at[:19], "%Y-%m-%dT%H:%M:%S")
-                if created_time < cutoff:
-                    continue
-
-                # skip replies en reposts
-                if getattr(record, "reply", None):
-                    continue
-                if hasattr(post, "reason") and post.reason is not None:
-                    continue
-
-                all_posts.append({
-                    "handle": handle,
-                    "uri": uri,
-                    "cid": cid,
-                    "created_at": created_time
-                })
+            feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 10})
         except Exception as e:
-            log(f"⚠️ Fout bij ophalen @{handle}: {e}")
-
-    log(f"🕒 {len(all_posts)} totale posts verzameld (voor filtering).")
-
-    # sorteren nieuwste eerst
-    all_posts.sort(key=lambda x: x["created_at"], reverse=True)
-
-    # filter dubbele en beperkingen
-    reposted = set()
-    counts = {}
-    final_posts = []
-
-    for p in all_posts:
-        h = p["handle"]
-        if p["uri"] in done or p["uri"] in reposted:
+            log(f"⚠️ Fout bij ophalen feed @{handle}: {e}")
             continue
-        if counts.get(h, 0) >= MAX_PER_USER:
+
+        for post in feed.feed:
+            record = post.post.record
+            if hasattr(post, "reason") and post.reason is not None:
+                continue
+            if getattr(record, "reply", None):
+                continue
+
+            uri = post.post.uri
+            cid = post.post.cid
+            created_at = getattr(record, "createdAt", None)
+            indexed_at = getattr(post.post, "indexed_at", None)
+
+            # Gebruik indexed_at als createdAt ontbreekt
+            ts = indexed_at or created_at
+            if not ts:
+                continue
+            try:
+                dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ")
+            except Exception:
+                continue
+
+            if dt < cutoff:
+                continue
+
+            # Alleen posts met media (foto of video)
+            embed = getattr(post.post, "embed", None)
+            has_media = False
+            if embed and hasattr(embed, "images"):
+                has_media = True
+            elif embed and hasattr(embed, "media"):
+                has_media = True
+            if not has_media:
+                continue
+
+            posts_to_check.append((dt, handle, uri, cid))
+
+    # Sorteer alle posts op tijd — nieuwste eerst
+    posts_to_check.sort(reverse=True, key=lambda x: x[0])
+    log(f"🕒 {len(posts_to_check)} totale posts verzameld (voor filtering).")
+
+    reposted = 0
+    liked = 0
+    user_counts = {}
+
+    for dt, handle, uri, cid in posts_to_check[:MAX_POSTS_PER_RUN]:
+        limit = MAX_PER_USER if handle != EXEMPT_HANDLE else 9999
+        user_counts.setdefault(handle, 0)
+        if user_counts[handle] >= limit:
             continue
-        final_posts.append(p)
-        reposted.add(p["uri"])
-        counts[h] = counts.get(h, 0) + 1
-        if len(final_posts) >= MAX_TOTAL:
-            break
 
-    log(f"📊 {len(final_posts)} posts na filtering, max {MAX_TOTAL} zal gepost worden.")
-
-    total_reposts = 0
-    total_likes = 0
-
-    for post in final_posts:
-        handle = post["handle"]
-        uri = post["uri"]
-        cid = post["cid"]
         try:
             client.app.bsky.feed.repost.create(
                 repo=client.me.did,
                 record={
                     "subject": {"uri": uri, "cid": cid},
-                    "createdAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-                }
+                    "createdAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                },
             )
             log(f"🔁 Gerepost @{handle}: {uri}")
-            done.add(uri)
-            total_reposts += 1
+            reposted += 1
+            user_counts[handle] += 1
             time.sleep(2)
 
             try:
@@ -117,24 +111,21 @@ def main():
                     repo=client.me.did,
                     record={
                         "subject": {"uri": uri, "cid": cid},
-                        "createdAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-                    }
+                        "createdAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    },
                 )
                 log(f"❤️ Geliked @{handle}: {uri}")
-                total_likes += 1
+                liked += 1
                 time.sleep(1)
-            except Exception as e:
-                log(f"⚠️ Fout bij liken @{handle}: {e}")
+            except Exception as e_like:
+                log(f"⚠️ Fout bij liken @{handle}: {e_like}")
 
         except Exception as e:
             log(f"⚠️ Fout bij repost @{handle}: {e}")
 
-    with open(repost_log, "w") as f:
-        f.write("\n".join(done))
-
-    log(f"✅ Klaar met run! ({total_reposts} reposts, {total_likes} likes)")
-    log(f"🧮 Samenvatting: {len(all_posts)} bekeken, {len(done)} totaal gerepost.")
+    log(f"✅ Klaar met run! ({reposted} reposts, {liked} likes)")
     log(f"⏰ Run beëindigd om {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+
 
 if __name__ == "__main__":
     main()
