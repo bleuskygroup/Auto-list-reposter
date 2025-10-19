@@ -1,9 +1,9 @@
-name: Bluesky Auto Reposter (Debug)
+name: Bluesky Auto Reposter (15min)
 
 on:
   schedule:
-    - cron: "*/15 * * * *"  # elke 15 minuten
-  workflow_dispatch:        # handmatig starten mogelijk
+    - cron: "*/15 * * * *"  # ⏱️ elke 15 minuten uitvoeren
+  workflow_dispatch:        # handmatig starten blijft mogelijk
 
 jobs:
   run:
@@ -22,7 +22,7 @@ jobs:
         run: |
           pip install atproto
 
-      - name: 🚀 Run autoposter debug script
+      - name: 🚀 Run autoposter script
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
