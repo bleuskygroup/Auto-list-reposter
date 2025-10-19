@@ -3,18 +3,16 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
-# Bluesky-lijst waaruit wordt gepost
+# Instellingen
 LIST_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.graph.list/3m3iga6wnmz2p"
-
-# Gebruiker zonder repostlimiet
 EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
 
-# Configuratie
-MAX_PER_RUN = 50
-MAX_PER_USER = 5
-HOURS_BACK = 1  # Alleen laatste uur
+MAX_PER_RUN = 50       # Maximaal aantal reposts per run
+MAX_PER_USER = 5        # Maximaal aantal reposts per gebruiker
+DAYS_BACK = 7           # Kijk 7 dagen terug
 
 def log(msg: str):
+    """Log met UTC-tijdstempel"""
     now = datetime.now(timezone.utc).strftime("[%H:%M:%S]")
     print(f"{now} {msg}")
 
@@ -33,7 +31,6 @@ def main():
         log(f"⚠️ Fout bij ophalen lijst: {e}")
         return
 
-    # Repostlog
     repost_log = "reposted.txt"
     if os.path.exists(repost_log):
         with open(repost_log, "r") as f:
@@ -42,9 +39,9 @@ def main():
         done = set()
 
     all_posts = []
-    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=HOURS_BACK)
+    cutoff_time = datetime.now(timezone.utc) - timedelta(days=DAYS_BACK)
 
-    # Posts verzamelen
+    # Feeds ophalen
     for member in members:
         handle = member.subject.handle
         log(f"🔎 Check feed @{handle}")
@@ -55,25 +52,24 @@ def main():
                 record = post.record
                 uri = post.uri
                 cid = post.cid
-                indexed_at = getattr(post, "indexedAt", None)
 
-                # Skip replies/reposts
-                if hasattr(item, "reason") and item.reason is not None:
+                # Skip reposts/replies
+                if hasattr(item, "reason") and item.reason:
                     continue
                 if getattr(record, "reply", None):
                     continue
                 if uri in done:
                     continue
 
-                created = getattr(record, "createdAt", None) or indexed_at
+                created = getattr(record, "createdAt", None) or getattr(post, "indexedAt", None)
                 if not created:
                     continue
+
                 try:
                     created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
                 except Exception:
                     continue
 
-                # Alleen posts van laatste uur
                 if created_dt < cutoff_time:
                     continue
 
@@ -81,22 +77,21 @@ def main():
                     "handle": handle,
                     "uri": uri,
                     "cid": cid,
-                    "created": created_dt,
+                    "created": created_dt
                 })
         except Exception as e:
-            log(f"⚠️ Fout bij @{handle}: {e}")
+            log(f"⚠️ Fout bij ophalen feed @{handle}: {e}")
 
     log(f"🕒 {len(all_posts)} totale posts verzameld (voor filtering).")
 
-    # Sorteer op tijd (oudste eerst)
+    # Oudste eerst
     all_posts.sort(key=lambda x: x["created"])
 
     reposted = 0
     liked = 0
     per_user_count = {}
     posts_to_do = all_posts[:MAX_PER_RUN]
-
-    log(f"📊 {len(posts_to_do)} posts na filtering, max {MAX_PER_RUN} zal gepost worden.")
+    log(f"📊 {len(posts_to_do)} posts geselecteerd (max {MAX_PER_RUN}).")
 
     for post in posts_to_do:
         handle = post["handle"]
