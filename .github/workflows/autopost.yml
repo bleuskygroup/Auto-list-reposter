@@ -1,29 +1,30 @@
-name: Auto Reposter
+name: Bluesky Auto Reposter
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # Elke 30 minuten
-  workflow_dispatch:  # Handmatig starten blijft mogelijk
+    - cron: "*/30 * * * *"  # elke 30 minuten
+  workflow_dispatch:
 
 jobs:
-  run:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: |
-          pip install -r requirements.txt
+          pip install atproto pydantic
 
-      - name: Run autoposter
+      - name: ▶️ Run autoposter
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
-        run: python autoposter.py
+        run: |
+          python autoposter.py
