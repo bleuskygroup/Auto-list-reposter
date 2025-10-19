@@ -3,19 +3,12 @@ import os
 import time
 from datetime import datetime, timedelta
 
-# Bluesky-lijst (waaruit gerepost wordt)
 LIST_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.graph.list/3m3iga6wnmz2p"
-
-# Gebruiker zonder repost-limiet
-EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
-
-# Algemene instellingen
-MAX_REPOSTS_PER_RUN = 25
 MAX_PER_USER = 5
-DAYS_BACK = 7  # geen oudere posts dan dit
-SLEEP_BETWEEN = 2  # seconden tussen reposts
+MAX_TOTAL = 25
+DAYS_LIMIT = 7
 
-def log(msg: str):
+def log(msg):
     now = datetime.utcnow().strftime("[%H:%M:%S]")
     print(f"{now} {msg}")
 
@@ -28,13 +21,10 @@ def main():
     log(f"✅ Ingelogd als {username}")
 
     # lijst ophalen
-    try:
-        members = client.app.bsky.graph.get_list({"list": LIST_URI}).items
-        log(f"📋 {len(members)} gebruikers gevonden.")
-    except Exception as e:
-        log(f"⚠️ Fout bij ophalen lijst: {e}")
-        return
+    members = client.app.bsky.graph.get_list({"list": LIST_URI}).items
+    log(f"📋 {len(members)} gebruikers gevonden.")
 
+    # repostlog laden
     repost_log = "reposted.txt"
     if os.path.exists(repost_log):
         with open(repost_log, "r") as f:
@@ -42,141 +32,108 @@ def main():
     else:
         done = set()
 
-    # verzamel alle recente posts
-    posts_all = []
-    seen_total = 0
+    cutoff = datetime.utcnow() - timedelta(days=DAYS_LIMIT)
+    all_posts = []
 
+    # Posts ophalen
     for member in members:
         handle = member.subject.handle
         log(f"🔎 Check feed @{handle}")
-
         try:
-            feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 10})
-            user_posts = []
-            for post in feed.feed:
-                seen_total += 1
-
-                record = getattr(post.post, "record", None)
-                if not record:
+            feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 10}).feed
+            for post in feed:
+                uri = post.post.uri
+                cid = post.post.cid
+                record = post.post.record
+                created_at = getattr(record, "createdAt", None) or getattr(post.post, "indexedAt", None)
+                if not created_at:
                     continue
 
-                # skip reposts (reason != None)
+                created_time = datetime.strptime(created_at[:19], "%Y-%m-%dT%H:%M:%S")
+                if created_time < cutoff:
+                    continue
+
+                # skip replies en reposts
+                if getattr(record, "reply", None):
+                    continue
                 if hasattr(post, "reason") and post.reason is not None:
                     continue
 
-                # skip replies
-                if getattr(record, "reply", None):
-                    continue
-
-                # datum bepalen
-                created_at = getattr(record, "createdAt", None)
-                indexed_at = getattr(post.post, "indexedAt", None)
-                timestamp = created_at or indexed_at
-                if not timestamp:
-                    continue
-
-                try:
-                    created_dt = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S.%fZ")
-                except ValueError:
-                    created_dt = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
-
-                # te oud?
-                if created_dt < datetime.utcnow() - timedelta(days=DAYS_BACK):
-                    continue
-
-                # geen media = overslaan
-                embed = getattr(post.post, "embed", None)
-                if not embed:
-                    continue
-
-                embed_type = getattr(embed, "$type", "")
-                has_media = any(
-                    t in embed_type
-                    for t in ["app.bsky.embed.images", "app.bsky.embed.video"]
-                )
-
-                # recordWithMedia
-                if "recordWithMedia" in embed_type:
-                    media = getattr(embed, "media", None)
-                    if media and any(
-                        t in getattr(media, "$type", "")
-                        for t in ["app.bsky.embed.images", "app.bsky.embed.video"]
-                    ):
-                        has_media = True
-
-                if not has_media:
-                    continue
-
-                user_posts.append({
+                all_posts.append({
                     "handle": handle,
-                    "uri": post.post.uri,
-                    "cid": post.post.cid,
-                    "time": created_dt
+                    "uri": uri,
+                    "cid": cid,
+                    "created_at": created_time
                 })
-
-            posts_all.extend(user_posts[:MAX_PER_USER])
-
         except Exception as e:
-            log(f"⚠️ Fout bij ophalen feed @{handle}: {e}")
+            log(f"⚠️ Fout bij ophalen @{handle}: {e}")
 
-    log(f"🕒 {seen_total} totale posts bekeken (voor filtering).")
+    log(f"🕒 {len(all_posts)} totale posts verzameld (voor filtering).")
 
-    # sorteer op tijd — nieuwste eerst
-    posts_all.sort(key=lambda x: x["time"], reverse=True)
-    log(f"📊 {len(posts_all)} posts na filtering, max {MAX_REPOSTS_PER_RUN} zal gepost worden.")
+    # sorteren nieuwste eerst
+    all_posts.sort(key=lambda x: x["created_at"], reverse=True)
 
-    reposted_count = 0
-    already_done = 0
-    liked_count = 0
+    # filter dubbele en beperkingen
+    reposted = set()
+    counts = {}
+    final_posts = []
 
-    for post in posts_all:
-        if reposted_count >= MAX_REPOSTS_PER_RUN:
+    for p in all_posts:
+        h = p["handle"]
+        if p["uri"] in done or p["uri"] in reposted:
+            continue
+        if counts.get(h, 0) >= MAX_PER_USER:
+            continue
+        final_posts.append(p)
+        reposted.add(p["uri"])
+        counts[h] = counts.get(h, 0) + 1
+        if len(final_posts) >= MAX_TOTAL:
             break
 
-        uri, cid, handle = post["uri"], post["cid"], post["handle"]
+    log(f"📊 {len(final_posts)} posts na filtering, max {MAX_TOTAL} zal gepost worden.")
 
-        if uri in done:
-            already_done += 1
-            continue
+    total_reposts = 0
+    total_likes = 0
 
+    for post in final_posts:
+        handle = post["handle"]
+        uri = post["uri"]
+        cid = post["cid"]
         try:
-            # Repost uitvoeren
             client.app.bsky.feed.repost.create(
                 repo=client.me.did,
                 record={
                     "subject": {"uri": uri, "cid": cid},
-                    "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                    "createdAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
                 }
             )
             log(f"🔁 Gerepost @{handle}: {uri}")
             done.add(uri)
-            reposted_count += 1
-            time.sleep(SLEEP_BETWEEN)
+            total_reposts += 1
+            time.sleep(2)
 
-            # Like ook uitvoeren
             try:
                 client.app.bsky.feed.like.create(
                     repo=client.me.did,
                     record={
                         "subject": {"uri": uri, "cid": cid},
-                        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                        "createdAt": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
                     }
                 )
                 log(f"❤️ Geliked @{handle}: {uri}")
-                liked_count += 1
+                total_likes += 1
                 time.sleep(1)
-            except Exception as e_like:
-                log(f"⚠️ Fout bij liken @{handle}: {e_like}")
+            except Exception as e:
+                log(f"⚠️ Fout bij liken @{handle}: {e}")
 
         except Exception as e:
             log(f"⚠️ Fout bij repost @{handle}: {e}")
 
-    # logbestand bijwerken
     with open(repost_log, "w") as f:
         f.write("\n".join(done))
 
-    log(f"✅ Klaar met run! ({reposted_count} reposts, {liked_count} likes)")
-    log(f"🧮 Samenvatting: {seen_total} bekeken, {already_done} al gedaan, {reposted_count} nieuw verwerkt.")
+    log(f"✅ Klaar met run! ({total_reposts} reposts, {total_likes} likes)")
+    log(f"🧮 Samenvatting: {len(all_posts)} bekeken, {len(done)} totaal gerepost.")
     log(f"⏰ Run beëindigd om {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
 if __name__ == "__main__":
