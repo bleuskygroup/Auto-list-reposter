@@ -2,8 +2,36 @@ from atproto import Client
 import os
 import time
 
-# jouw Bluesky-lijst (waar de bot uit moet reposten)
 LIST_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.graph.list/3m3iga6wnmz2p"
+
+def has_media(post):
+    """Controleer of de post foto of video bevat (ondersteunt alle bekende embed-types)."""
+    embed = getattr(post.post, "embed", None)
+    if not embed:
+        return False
+
+    embed_type = getattr(embed, "$type", "") or ""
+    if any(x in embed_type for x in [
+        "app.bsky.embed.images",
+        "app.bsky.embed.video",
+        "app.bsky.embed.external",
+        "app.bsky.embed.recordWithMedia"
+    ]):
+        return True
+
+    # recordWithMedia kan een nested 'media' veld bevatten
+    if hasattr(embed, "media"):
+        media = getattr(embed, "media", None)
+        media_type = getattr(media, "$type", "") or ""
+        if any(x in media_type for x in [
+            "app.bsky.embed.images",
+            "app.bsky.embed.video",
+            "app.bsky.embed.external"
+        ]):
+            return True
+
+    return False
+
 
 def main():
     username = os.environ["BSKY_USERNAME"]
@@ -13,7 +41,6 @@ def main():
     client.login(username, password)
     print(f"✅ Ingelogd als: {username}")
 
-    # haal leden uit de lijst
     try:
         members = client.app.bsky.graph.get_list({"list": LIST_URI}).items
         print(f"📋 {len(members)} gebruikers in lijst gevonden.")
@@ -21,7 +48,6 @@ def main():
         print(f"⚠️ Fout bij ophalen lijst: {e}")
         return
 
-    # logbestand voor al gerepostte posts
     repost_log = "reposted.txt"
     if os.path.exists(repost_log):
         with open(repost_log, "r") as f:
@@ -29,7 +55,6 @@ def main():
     else:
         done = set()
 
-    # bekijk de laatste posts van elk lid en repost (nieuwste eerst)
     for member in members:
         handle = member.subject.handle
         print(f"🔎 Controleer posts van @{handle}")
@@ -38,36 +63,18 @@ def main():
             feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 5})
             posts = list(feed.feed)
 
-            # van oud → nieuw zodat nieuwste laatst komt
             for post in reversed(posts):
                 # sla replies over
                 if getattr(post.post.record, "reply", None):
                     continue
 
-                # controleer of post media (foto of video) bevat
-                embed = getattr(post.post, "embed", None)
-                has_media = False
-
-                if embed:
-                    embed_type = getattr(embed, "$type", "")
-                    if "app.bsky.embed.images" in embed_type or "app.bsky.embed.video" in embed_type:
-                        has_media = True
-                    elif embed_type == "app.bsky.embed.recordWithMedia":
-                        # sommige posts hebben recordWithMedia-structuur (combinatie)
-                        media = getattr(embed, "media", None)
-                        if media and (
-                            "app.bsky.embed.images" in getattr(media, "$type", "")
-                            or "app.bsky.embed.video" in getattr(media, "$type", "")
-                        ):
-                            has_media = True
-
-                if not has_media:
-                    continue  # geen foto of video, overslaan
+                # check media
+                if not has_media(post):
+                    continue
 
                 uri = post.post.uri
                 cid = post.post.cid
 
-                # sla dubbele reposts over
                 if uri in done:
                     continue
 
@@ -76,7 +83,6 @@ def main():
 
                 if not already_reposted:
                     try:
-                        # Repost
                         client.app.bsky.feed.repost.create(
                             repo=client.me.did,
                             record={
@@ -84,11 +90,10 @@ def main():
                                 "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                             }
                         )
-                        print(f"📸 Gerepost (met foto/video): {uri}")
+                        print(f"📸 Gerepost (met media): {uri}")
                         done.add(uri)
                         time.sleep(2)
 
-                        # Like (alleen als nog niet geliked)
                         already_liked = getattr(viewer, "like", None)
                         if not already_liked:
                             try:
@@ -106,10 +111,10 @@ def main():
 
                     except Exception as e:
                         print(f"⚠️ Fout bij repost @{handle}: {e}")
+
         except Exception as e:
             print(f"⚠️ Fout bij ophalen feed @{handle}: {e}")
 
-    # log bijwerken
     with open(repost_log, "w") as f:
         f.write("\n".join(done))
 
