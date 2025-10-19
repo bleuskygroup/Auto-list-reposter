@@ -3,32 +3,20 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
-# Bluesky-lijst met accounts
+# Bluesky-lijst waaruit wordt gepost
 LIST_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.graph.list/3m3iga6wnmz2p"
 
 # Gebruiker zonder repostlimiet
 EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
 
-# Config
+# Configuratie
 MAX_PER_RUN = 50
 MAX_PER_USER = 5
-DAYS_BACK = 7
+HOURS_BACK = 1  # Alleen laatste uur
 
 def log(msg: str):
-    """Print logregel met tijdstempel"""
     now = datetime.now(timezone.utc).strftime("[%H:%M:%S]")
     print(f"{now} {msg}")
-
-def parse_time(record, post):
-    """Probeert de juiste datum/tijd te bepalen"""
-    for attr in ["createdAt", "indexedAt", "created_at", "timestamp"]:
-        val = getattr(record, attr, None) or getattr(post, attr, None)
-        if val:
-            try:
-                return datetime.fromisoformat(val.replace("Z", "+00:00"))
-            except Exception:
-                continue
-    return None
 
 def main():
     username = os.environ["BSKY_USERNAME"]
@@ -38,7 +26,6 @@ def main():
     client.login(username, password)
     log(f"✅ Ingelogd als {username}")
 
-    # Ophalen lijst met gebruikers
     try:
         members = client.app.bsky.graph.get_list({"list": LIST_URI}).items
         log(f"📋 {len(members)} gebruikers gevonden.")
@@ -46,17 +33,18 @@ def main():
         log(f"⚠️ Fout bij ophalen lijst: {e}")
         return
 
-    # Repostlog laden
+    # Repostlog
     repost_log = "reposted.txt"
-    done = set()
     if os.path.exists(repost_log):
         with open(repost_log, "r") as f:
             done = set(f.read().splitlines())
+    else:
+        done = set()
 
     all_posts = []
-    cutoff_time = datetime.now(timezone.utc) - timedelta(days=DAYS_BACK)
+    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=HOURS_BACK)
 
-    # Feeds ophalen
+    # Posts verzamelen
     for member in members:
         handle = member.subject.handle
         log(f"🔎 Check feed @{handle}")
@@ -67,24 +55,25 @@ def main():
                 record = post.record
                 uri = post.uri
                 cid = post.cid
+                indexed_at = getattr(post, "indexedAt", None)
 
-                # Reposts en replies overslaan
+                # Skip replies/reposts
                 if hasattr(item, "reason") and item.reason is not None:
                     continue
                 if getattr(record, "reply", None):
                     continue
-
-                # Skip dubbele of eerder geposte
                 if uri in done:
                     continue
 
-                # Tijd ophalen
-                created_dt = parse_time(record, post)
-                if not created_dt:
-                    log(f"   ⚪ @{handle} → SKIP: geen tijd gevonden ({uri})")
+                created = getattr(record, "createdAt", None) or indexed_at
+                if not created:
+                    continue
+                try:
+                    created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                except Exception:
                     continue
 
-                # Filter op datum
+                # Alleen posts van laatste uur
                 if created_dt < cutoff_time:
                     continue
 
@@ -95,7 +84,7 @@ def main():
                     "created": created_dt,
                 })
         except Exception as e:
-            log(f"⚠️ Fout bij ophalen feed @{handle}: {e}")
+            log(f"⚠️ Fout bij @{handle}: {e}")
 
     log(f"🕒 {len(all_posts)} totale posts verzameld (voor filtering).")
 
@@ -110,21 +99,19 @@ def main():
     log(f"📊 {len(posts_to_do)} posts na filtering, max {MAX_PER_RUN} zal gepost worden.")
 
     for post in posts_to_do:
-        if reposted >= MAX_PER_RUN:
-            break
-
         handle = post["handle"]
         uri = post["uri"]
         cid = post["cid"]
 
-        # Per-gebruiker limiet
+        if reposted >= MAX_PER_RUN:
+            break
+
         if handle != EXEMPT_HANDLE:
             per_user_count[handle] = per_user_count.get(handle, 0)
             if per_user_count[handle] >= MAX_PER_USER:
                 continue
 
         try:
-            # Repost uitvoeren
             client.app.bsky.feed.repost.create(
                 repo=client.me.did,
                 record={
@@ -138,7 +125,6 @@ def main():
             per_user_count[handle] = per_user_count.get(handle, 0) + 1
             time.sleep(2)
 
-            # Like uitvoeren
             try:
                 client.app.bsky.feed.like.create(
                     repo=client.me.did,
@@ -156,7 +142,6 @@ def main():
         except Exception as e:
             log(f"⚠️ Fout bij repost @{handle}: {e}")
 
-    # Logbestand bijwerken
     with open(repost_log, "w") as f:
         f.write("\n".join(done))
 
