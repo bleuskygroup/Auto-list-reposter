@@ -12,7 +12,7 @@ EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
 # Config
 MAX_PER_RUN = 50
 MAX_PER_USER = 5
-DAYS_BACK = 7
+HOURS_BACK = 4  # ⏰ Alleen posts van de laatste 4 uur
 
 def log(msg: str):
     """Print logregel met tijdstempel"""
@@ -54,7 +54,7 @@ def main():
             done = set(f.read().splitlines())
 
     all_posts = []
-    cutoff_time = datetime.now(timezone.utc) - timedelta(days=DAYS_BACK)
+    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=HOURS_BACK)
 
     # Feeds ophalen
     for member in members:
