@@ -2,7 +2,7 @@ name: Bluesky Auto Reposter (Debug)
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # elke 30 minuten
+    - cron: "*/15 * * * *"  # elke 15 minuten
   workflow_dispatch:        # handmatig starten mogelijk
 
 jobs:
