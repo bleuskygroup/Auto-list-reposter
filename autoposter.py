@@ -3,10 +3,10 @@ import os
 import time
 from datetime import datetime
 
-# Bluesky-lijst (waaruit gerepost wordt)
+# Bluesky-lijst met gebruikers
 LIST_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.graph.list/3m3iga6wnmz2p"
 
-# Gebruiker zonder limiet
+# Gebruiker zonder repostlimiet
 EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
 
 def log(msg: str):
@@ -30,7 +30,6 @@ def main():
         log(f"⚠️ Fout bij ophalen lijst: {e}")
         return
 
-    # logbestand
     repost_log = "reposted.txt"
     if os.path.exists(repost_log):
         with open(repost_log, "r") as f:
@@ -38,89 +37,106 @@ def main():
     else:
         done = set()
 
-    posted_this_run = set()
-    total_reposts = 0
-    total_likes = 0
+    posts_to_check = []
 
+    # verzamel alle posts van alle gebruikers
     for member in members:
         handle = member.subject.handle
-        log(f"🔎 Controleer posts van @{handle}")
-
         try:
             feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 5})
-            posts = list(feed.feed)
-
-            reposted_this_user = 0
-            user_limit = 3 if handle != EXEMPT_HANDLE else float("inf")
-
-            for post in reversed(posts):
-                if reposted_this_user >= user_limit:
-                    break
-
+            for post in feed.feed:
                 record = post.post.record
-                uri = post.post.uri
-                cid = post.post.cid
-
-                # skip reposts van anderen
-                if hasattr(post, "reason") and post.reason is not None:
+                created_at = getattr(record, "createdAt", None)
+                if not created_at:
                     continue
-
-                # skip replies
-                if getattr(record, "reply", None):
-                    continue
-
-                # skip embeds van andere gebruikers
-                embed = getattr(post.post, "embed", None)
-                if embed and hasattr(embed, "record"):
-                    rec = getattr(embed, "record", None)
-                    if rec and hasattr(rec, "author") and rec.author.handle != handle:
-                        continue
-
-                # dubbele check
-                if uri in done or uri in posted_this_run:
-                    continue
-
-                try:
-                    client.app.bsky.feed.repost.create(
-                        repo=client.me.did,
-                        record={
-                            "subject": {"uri": uri, "cid": cid},
-                            "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                        }
-                    )
-                    log(f"🟦 Gerepost @{handle}: {uri}")
-                    done.add(uri)
-                    posted_this_run.add(uri)
-                    reposted_this_user += 1
-                    total_reposts += 1
-                    time.sleep(2)
-
-                    # Like
-                    try:
-                        client.app.bsky.feed.like.create(
-                            repo=client.me.did,
-                            record={
-                                "subject": {"uri": uri, "cid": cid},
-                                "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                            }
-                        )
-                        log(f"❤️ Geliked @{handle}: {uri}")
-                        total_likes += 1
-                        time.sleep(1)
-                    except Exception as e_like:
-                        log(f"⚠️ Fout bij liken @{handle}: {e_like}")
-
-                except Exception as e:
-                    log(f"⚠️ Fout bij repost @{handle}: {e}")
-
+                posts_to_check.append({
+                    "handle": handle,
+                    "uri": post.post.uri,
+                    "cid": post.post.cid,
+                    "created_at": datetime.fromisoformat(created_at.replace("Z", "+00:00")),
+                    "post": post
+                })
         except Exception as e:
             log(f"⚠️ Fout bij ophalen feed @{handle}: {e}")
+
+    # sorteer op tijd (nieuwste eerst)
+    posts_to_check.sort(key=lambda x: x["created_at"], reverse=True)
+    log(f"🕒 {len(posts_to_check)} totale posts verzameld en op tijd gesorteerd.")
+
+    total_reposts = 0
+    total_likes = 0
+    posted_this_run = set()
+    user_counts = {}
+
+    for entry in posts_to_check:
+        handle = entry["handle"]
+        uri = entry["uri"]
+        cid = entry["cid"]
+        post = entry["post"]
+
+        # overslaan van reposts van anderen
+        if hasattr(post, "reason") and post.reason is not None:
+            continue
+
+        # overslaan van replies
+        record = post.post.record
+        if getattr(record, "reply", None):
+            continue
+
+        # overslaan van embeds van andere gebruikers
+        embed = getattr(post.post, "embed", None)
+        if embed and hasattr(embed, "record"):
+            rec = getattr(embed, "record", None)
+            if rec and hasattr(rec, "author") and rec.author.handle != handle:
+                continue
+
+        # dubbele check
+        if uri in done or uri in posted_this_run:
+            continue
+
+        # limiet per gebruiker (3 behalve exempt)
+        limit = 3 if handle != EXEMPT_HANDLE else float("inf")
+        user_counts.setdefault(handle, 0)
+        if user_counts[handle] >= limit:
+            continue
+
+        try:
+            client.app.bsky.feed.repost.create(
+                repo=client.me.did,
+                record={
+                    "subject": {"uri": uri, "cid": cid},
+                    "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                }
+            )
+            log(f"🟦 Gerepost @{handle}: {uri}")
+            done.add(uri)
+            posted_this_run.add(uri)
+            user_counts[handle] += 1
+            total_reposts += 1
+            time.sleep(2)
+
+            # like
+            try:
+                client.app.bsky.feed.like.create(
+                    repo=client.me.did,
+                    record={
+                        "subject": {"uri": uri, "cid": cid},
+                        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                    }
+                )
+                log(f"❤️ Geliked @{handle}: {uri}")
+                total_likes += 1
+                time.sleep(1)
+            except Exception as e_like:
+                log(f"⚠️ Fout bij liken @{handle}: {e_like}")
+
+        except Exception as e:
+            log(f"⚠️ Fout bij repost @{handle}: {e}")
 
     # logbestand bijwerken
     with open(repost_log, "w") as f:
         f.write("\n".join(done))
 
-    log("✅ Klaar met run!")
     log(f"📊 Samenvatting: {total_reposts} reposts en {total_likes} likes uitgevoerd.")
     log(f"⏰ Run beëindigd om {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
