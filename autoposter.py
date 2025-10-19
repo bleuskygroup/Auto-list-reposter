@@ -3,15 +3,13 @@ import os
 import time
 from datetime import datetime
 
-# Configuratie
 LIST_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.graph.list/3m3iga6wnmz2p"
 EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
 REPOST_LOG = "reposted.txt"
-MAX_TOTAL_REPOSTS = 25  # ⬅️ max aantal reposts per run
+MAX_TOTAL_REPOSTS = 25
 
 
 def log(msg: str):
-    """Logt berichten met UTC-tijd."""
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     print(f"[{now}] {msg}")
 
@@ -28,12 +26,22 @@ def save_log(done):
         f.write("\n".join(done))
 
 
-def get_created_at(post):
-    """Probeer createdAt te lezen uit post.record"""
-    try:
-        return getattr(post.post.record, "createdAt", None)
-    except Exception:
-        return None
+def has_media(post):
+    """Controleer of post afbeeldingen of video's bevat."""
+    embed = getattr(post.post, "embed", None)
+    if not embed:
+        return False
+    t = getattr(embed, "$type", "")
+    if "app.bsky.embed.images" in t or "app.bsky.embed.video" in t:
+        return True
+    if t == "app.bsky.embed.recordWithMedia":
+        media = getattr(embed, "media", None)
+        if media and (
+            "app.bsky.embed.images" in getattr(media, "$type", "")
+            or "app.bsky.embed.video" in getattr(media, "$type", "")
+        ):
+            return True
+    return False
 
 
 def main():
@@ -44,7 +52,6 @@ def main():
     client.login(username, password)
     log(f"✅ Ingelogd als: {username}")
 
-    # Lijst ophalen
     try:
         members = client.app.bsky.graph.get_list({"list": LIST_URI}).items
         log(f"📋 {len(members)} gebruikers in lijst gevonden.")
@@ -55,25 +62,28 @@ def main():
     done = load_log()
     all_posts = []
 
-    # Verzamel eerst ALLE posts uit alle gebruikers
+    # Verzamel posts per gebruiker
     for member in members:
         handle = member.subject.handle
         try:
             feed = client.app.bsky.feed.get_author_feed({
                 "actor": handle,
-                "limit": 10,
-                "filter": "posts_with_media"
+                "limit": 10
             })
             for post in feed.feed:
                 record = post.post.record
-                created_at = get_created_at(post)
+                created_at = getattr(record, "createdAt", None)
                 if not created_at:
                     continue
+
                 # Alleen originele mediaposts
                 if hasattr(post, "reason") and post.reason is not None:
                     continue
                 if getattr(record, "reply", None):
                     continue
+                if not has_media(post):
+                    continue
+
                 all_posts.append({
                     "handle": handle,
                     "uri": post.post.uri,
@@ -85,7 +95,6 @@ def main():
 
     log(f"🕒 {len(all_posts)} totale posts verzameld.")
 
-    # Sorteer posts op tijd — nieuwste eerst
     all_posts.sort(key=lambda p: p["created_at"], reverse=True)
 
     done_this_run = set()
@@ -98,15 +107,11 @@ def main():
             log(f"🚫 Maximaal {MAX_TOTAL_REPOSTS} reposts bereikt. Stop run.")
             break
 
-        handle = p["handle"]
-        uri = p["uri"]
-        cid = p["cid"]
+        handle, uri, cid = p["handle"], p["uri"], p["cid"]
 
-        # Skip als al gedaan
         if uri in done or uri in done_this_run:
             continue
 
-        # Limiet per gebruiker
         count = per_user_count.get(handle, 0)
         limit = 5 if handle != EXEMPT_HANDLE else float("inf")
         if count >= limit:
@@ -127,7 +132,6 @@ def main():
             total_reposts += 1
             time.sleep(2)
 
-            # Like
             try:
                 client.app.bsky.feed.like.create(
                     repo=client.me.did,
