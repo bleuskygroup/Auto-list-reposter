@@ -12,7 +12,7 @@ EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
 # Config
 MAX_PER_RUN = 50
 MAX_PER_USER = 5
-HOURS_BACK = 4  # ⏰ Alleen posts van de laatste 4 uur
+MINUTES_BACK = 30   # 🔹 Alleen posts van de laatste 30 minuten
 
 def log(msg: str):
     """Print logregel met tijdstempel"""
@@ -54,7 +54,8 @@ def main():
             done = set(f.read().splitlines())
 
     all_posts = []
-    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=HOURS_BACK)
+    cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=MINUTES_BACK)
+    log(f"🕐 Filter: alleen posts sinds {cutoff_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
     # Feeds ophalen
     for member in members:
@@ -84,7 +85,7 @@ def main():
                     log(f"   ⚪ @{handle} → SKIP: geen tijd gevonden ({uri})")
                     continue
 
-                # Filter op datum
+                # Filter op laatste 30 minuten
                 if created_dt < cutoff_time:
                     continue
 
