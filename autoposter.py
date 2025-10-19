@@ -27,15 +27,12 @@ def save_log(done):
 
 
 def has_media(post):
-    """Controleer of post afbeeldingen of video's bevat, ook nested."""
     embed = getattr(post.post, "embed", None)
     if not embed:
         return False
-
     t = getattr(embed, "$type", "")
     if "app.bsky.embed.images" in t or "app.bsky.embed.video" in t:
         return True
-
     if t == "app.bsky.embed.recordWithMedia":
         media = getattr(embed, "media", None)
         if media and (
@@ -47,11 +44,16 @@ def has_media(post):
 
 
 def get_timestamp(post):
-    """Gebruik createdAt of fallback naar indexedAt"""
+    """Zoek createdAt of fallback via indexed_at (nieuwe API)"""
     record = getattr(post.post, "record", None)
     if record and hasattr(record, "createdAt"):
         return record.createdAt
-    return getattr(post.post, "indexedAt", None)
+    # fallback
+    if hasattr(post.post, "indexed_at"):
+        return post.post.indexed_at
+    if hasattr(post.post, "indexedAt"):
+        return post.post.indexedAt
+    return None
 
 
 def main():
@@ -72,33 +74,22 @@ def main():
     done = load_log()
     all_posts = []
 
-    # Verzamel posts per gebruiker
     for member in members:
         handle = member.subject.handle
         try:
-            feed = client.app.bsky.feed.get_author_feed({
-                "actor": handle,
-                "limit": 10
-            })
+            feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 10})
             for post in feed.feed:
-                record = post.post.record
-
                 created_at = get_timestamp(post)
                 if not created_at:
                     log(f"⚠️ Geen tijd gevonden voor @{handle}, skip.")
                     continue
 
-                # Sla reposts of replies over
+                record = post.post.record
                 if hasattr(post, "reason") and post.reason is not None:
-                    log(f"↩️ Repost @{handle}, overslaan.")
                     continue
                 if getattr(record, "reply", None):
-                    log(f"💬 Reply @{handle}, overslaan.")
                     continue
-
-                # Controleer media
                 if not has_media(post):
-                    log(f"📄 Geen media @{handle}, overslaan.")
                     continue
 
                 all_posts.append({
@@ -112,7 +103,7 @@ def main():
 
     log(f"🕒 {len(all_posts)} totale posts verzameld (na filtering).")
 
-    # Sorteer nieuwste eerst
+    # Nieuwste bovenaan
     all_posts.sort(key=lambda p: p["created_at"], reverse=True)
 
     done_this_run = set()
@@ -150,7 +141,6 @@ def main():
             total_reposts += 1
             time.sleep(2)
 
-            # Like
             try:
                 client.app.bsky.feed.like.create(
                     repo=client.me.did,
