@@ -45,7 +45,7 @@ def main():
             posts = list(feed.feed)
 
             reposted_this_user = 0
-            user_limit = 1 if handle != EXEMPT_HANDLE else float("inf")
+            user_limit = 3 if handle != EXEMPT_HANDLE else float("inf")
 
             for post in reversed(posts):
                 if reposted_this_user >= user_limit:
