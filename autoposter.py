@@ -11,20 +11,37 @@ def log(msg: str):
     print(f"[{now}] {msg}")
 
 def extract_created_at(post):
-    """Probeer het tijdveld uit verschillende mogelijke locaties te halen."""
+    """Probeer het tijdveld uit verschillende mogelijke locaties te halen (inclusief dict-records)."""
     record = getattr(post.post, "record", None)
-    possible_fields = [
-        getattr(record, "createdAt", None),
+    possible_fields = []
+
+    # record kan object of dict zijn
+    if record:
+        if isinstance(record, dict):
+            possible_fields.extend([
+                record.get("createdAt"),
+                record.get("indexedAt"),
+                record.get("_created_at")
+            ])
+        else:
+            possible_fields.extend([
+                getattr(record, "createdAt", None),
+                getattr(record, "indexedAt", None),
+                getattr(record, "_created_at", None)
+            ])
+
+    possible_fields.extend([
         getattr(post.post, "createdAt", None),
         getattr(post.post, "indexedAt", None),
         getattr(post, "indexedAt", None),
-        getattr(record, "_created_at", None),   # nieuwe interne naam
         getattr(post.post, "_created_at", None)
-    ]
+    ])
+
     for field in possible_fields:
         if field:
             return field
     return None
+
 
 def main():
     username = os.environ["BSKY_USERNAME"]
@@ -95,8 +112,11 @@ def main():
         if hasattr(post, "reason") and post.reason is not None:
             continue
         record = post.post.record
-        if getattr(record, "reply", None):
+        if isinstance(record, dict) and "reply" in record:
             continue
+        if not isinstance(record, dict) and getattr(record, "reply", None):
+            continue
+
         embed = getattr(post.post, "embed", None)
         if embed and hasattr(embed, "record"):
             rec = getattr(embed, "record", None)
