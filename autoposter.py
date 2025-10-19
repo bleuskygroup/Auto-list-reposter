@@ -25,20 +25,6 @@ def sleep_random(min_s=2, max_s=5):
     time.sleep(delay)
 
 
-def load_or_init_log(filename: str):
-    """Logbestand inladen of aanmaken"""
-    if os.path.exists(filename):
-        with open(filename, "r") as f:
-            return set(f.read().splitlines())
-    return set()
-
-
-def save_log(filename: str, data: set):
-    """Logbestand opslaan"""
-    with open(filename, "w") as f:
-        f.write("\n".join(data))
-
-
 # --- Hoofdprogramma ---
 def main():
     username = os.environ["BSKY_USERNAME"]
@@ -56,27 +42,13 @@ def main():
         log(f"⚠️ Fout bij ophalen lijst: {e}")
         return
 
-    # Logbestanden
+    # Repost-logbestand bijhouden
     repost_log = "reposted.txt"
-    daily_log = "reposted_today.txt"
-    date_marker = "repost_date.txt"
-
-    done = load_or_init_log(repost_log)
-    done_today = load_or_init_log(daily_log)
-
-    # Reset daily log bij nieuwe dag
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
-    if os.path.exists(date_marker):
-        with open(date_marker, "r") as f:
-            last_day = f.read().strip()
+    if os.path.exists(repost_log):
+        with open(repost_log, "r") as f:
+            done = set(f.read().splitlines())
     else:
-        last_day = None
-
-    if last_day != today_str:
-        log("🌅 Nieuwe dag — dagelijkse repostlog wordt leeggemaakt.")
-        done_today.clear()
-        with open(date_marker, "w") as f:
-            f.write(today_str)
+        done = set()
 
     all_posts = []
     total_checked = 0
@@ -117,6 +89,7 @@ def main():
                 if getattr(record, "reply", None):
                     continue
 
+                # Voeg toe aan verzamel-lijst
                 all_posts.append({
                     "handle": handle,
                     "uri": post.post.uri,
@@ -124,6 +97,7 @@ def main():
                     "created_at": post_time
                 })
 
+            # Kleine pauze tussen gebruikersfeeds
             sleep_random(3, 6)
 
         except Exception as e:
@@ -131,15 +105,12 @@ def main():
 
     log(f"🕒 {total_checked} totale posts bekeken (voor filtering).")
 
-    # Sorteer: oudste eerst
+    # Sorteer op tijd: oudste eerst (zodat nieuwe posts bovenaan verschijnen op tijdlijn)
     all_posts.sort(key=lambda p: p["created_at"])
 
-    # Filter op repostlogs
-    new_posts = [
-        p for p in all_posts
-        if p["uri"] not in done and p["uri"] not in done_today
-    ]
-    log(f"📊 {len(new_posts)} nieuwe posts na filtering, max {MAX_TOTAL} zal gepost worden.")
+    # Filter reeds gereposte posts
+    new_posts = [p for p in all_posts if p["uri"] not in done]
+    log(f"📊 {len(new_posts)} posts na filtering, max {MAX_TOTAL} zal gepost worden.")
 
     total_reposts = 0
     total_likes = 0
@@ -172,7 +143,6 @@ def main():
             log(f"🔁 Gerepost @{handle}: {uri}")
             total_reposts += 1
             done.add(uri)
-            done_today.add(uri)
             posted_uris.add(f"{handle}:{uri}")
             sleep_random()
 
@@ -194,10 +164,11 @@ def main():
         except Exception as e:
             log(f"⚠️ Fout bij repost @{handle}: {e}")
 
-    # Logbestanden bijwerken
-    save_log(repost_log, done)
-    save_log(daily_log, done_today)
+    # Logbestand bijwerken
+    with open(repost_log, "w") as f:
+        f.write("\n".join(done))
 
+    # Samenvatting
     log(f"✅ Klaar met run! ({total_reposts} reposts, {total_likes} likes)")
     log(f"🧮 Samenvatting: {total_checked} bekeken, {len(new_posts)} nieuw, {total_reposts} gerepost.")
     log(f"⏰ Run beëindigd om {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
