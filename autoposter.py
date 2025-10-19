@@ -1,13 +1,18 @@
 from atproto import Client
 import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
-# jouw Bluesky-lijst
+# Bluesky-lijst (waaruit gerepost wordt)
 LIST_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.graph.list/3m3iga6wnmz2p"
 
-# gebruiker die geen limiet heeft
+# Gebruiker zonder limiet
 EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
+
+def log(msg: str):
+    """Voeg tijd toe aan elke logregel"""
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    print(f"[{now}] {msg}")
 
 def main():
     username = os.environ["BSKY_USERNAME"]
@@ -15,14 +20,14 @@ def main():
 
     client = Client()
     client.login(username, password)
-    print(f"✅ Ingelogd als: {username}")
+    log(f"✅ Ingelogd als: {username}")
 
     # lijst ophalen
     try:
         members = client.app.bsky.graph.get_list({"list": LIST_URI}).items
-        print(f"📋 {len(members)} gebruikers in lijst gevonden.")
+        log(f"📋 {len(members)} gebruikers in lijst gevonden.")
     except Exception as e:
-        print(f"⚠️ Fout bij ophalen lijst: {e}")
+        log(f"⚠️ Fout bij ophalen lijst: {e}")
         return
 
     # logbestand
@@ -33,15 +38,16 @@ def main():
     else:
         done = set()
 
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-    print(f"🕓 Alleen posts na {cutoff.isoformat()} worden meegenomen.")
+    posted_this_run = set()
+    total_reposts = 0
+    total_likes = 0
 
     for member in members:
         handle = member.subject.handle
-        print(f"\n🔎 Controleer originele posts van @{handle}")
+        log(f"🔎 Controleer posts van @{handle}")
 
         try:
-            feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 10})
+            feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 5})
             posts = list(feed.feed)
 
             reposted_this_user = 0
@@ -70,60 +76,53 @@ def main():
                     if rec and hasattr(rec, "author") and rec.author.handle != handle:
                         continue
 
-                # tijd check
-                created_at_str = getattr(record, "createdAt", None)
-                if not created_at_str:
-                    continue
-                created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
-                if created_at < cutoff:
-                    continue
-
                 # dubbele check
-                if uri in done:
+                if uri in done or uri in posted_this_run:
                     continue
 
-                viewer = getattr(post, "viewer", None)
-                already_reposted = getattr(viewer, "repost", None)
+                try:
+                    client.app.bsky.feed.repost.create(
+                        repo=client.me.did,
+                        record={
+                            "subject": {"uri": uri, "cid": cid},
+                            "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                        }
+                    )
+                    log(f"🟦 Gerepost @{handle}: {uri}")
+                    done.add(uri)
+                    posted_this_run.add(uri)
+                    reposted_this_user += 1
+                    total_reposts += 1
+                    time.sleep(2)
 
-                if not already_reposted:
+                    # Like
                     try:
-                        client.app.bsky.feed.repost.create(
+                        client.app.bsky.feed.like.create(
                             repo=client.me.did,
                             record={
                                 "subject": {"uri": uri, "cid": cid},
                                 "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                             }
                         )
-                        print(f"🟦 Gerepost originele post: {uri}")
-                        done.add(uri)
-                        reposted_this_user += 1
-                        time.sleep(2)
+                        log(f"❤️ Geliked @{handle}: {uri}")
+                        total_likes += 1
+                        time.sleep(1)
+                    except Exception as e_like:
+                        log(f"⚠️ Fout bij liken @{handle}: {e_like}")
 
-                        # like toevoegen
-                        already_liked = getattr(viewer, "like", None)
-                        if not already_liked:
-                            try:
-                                client.app.bsky.feed.like.create(
-                                    repo=client.me.did,
-                                    record={
-                                        "subject": {"uri": uri, "cid": cid},
-                                        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                                    }
-                                )
-                                print(f"❤️ Geliked: {uri}")
-                                time.sleep(1)
-                            except Exception as e_like:
-                                print(f"⚠️ Fout bij liken @{handle}: {e_like}")
+                except Exception as e:
+                    log(f"⚠️ Fout bij repost @{handle}: {e}")
 
-                    except Exception as e:
-                        print(f"⚠️ Fout bij repost @{handle}: {e}")
         except Exception as e:
-            print(f"⚠️ Fout bij ophalen feed @{handle}: {e}")
+            log(f"⚠️ Fout bij ophalen feed @{handle}: {e}")
 
+    # logbestand bijwerken
     with open(repost_log, "w") as f:
         f.write("\n".join(done))
 
-    print("\n✅ Klaar met run! (max 1 per gebruiker, onbeperkt voor @bleuskybeauty.bsky.social)")
+    log("✅ Klaar met run!")
+    log(f"📊 Samenvatting: {total_reposts} reposts en {total_likes} likes uitgevoerd.")
+    log(f"⏰ Run beëindigd om {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
 if __name__ == "__main__":
     main()
