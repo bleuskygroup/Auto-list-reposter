@@ -1,9 +1,9 @@
-name: Bluesky Auto Reposter
+name: Auto Reposter
 
 on:
   schedule:
-    - cron: "0 * * * *"  # elke 60 minuten
-  workflow_dispatch:
+    - cron: "*/30 * * * *"  # Elke 30 minuten
+  workflow_dispatch:  # Handmatig starten blijft mogelijk
 
 jobs:
   run:
@@ -13,29 +13,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Restore repost log
-        uses: actions/cache@v4
-        with:
-          path: reposted.txt
-          key: repost-log
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install atproto
+        run: |
+          pip install -r requirements.txt
 
-      - name: Run auto repost script
+      - name: Run autoposter
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
         run: python autoposter.py
-
-      - name: Save repost log
-        if: always()
-        uses: actions/cache@v4
-        with:
-          path: reposted.txt
-          key: repost-log
