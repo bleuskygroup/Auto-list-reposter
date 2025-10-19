@@ -3,14 +3,10 @@ import os
 import time
 from datetime import datetime
 
-# Bluesky-lijst met gebruikers
 LIST_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.graph.list/3m3iga6wnmz2p"
-
-# Gebruiker zonder repostlimiet
 EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
 
 def log(msg: str):
-    """Voeg tijd toe aan elke logregel"""
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     print(f"[{now}] {msg}")
 
@@ -22,7 +18,6 @@ def main():
     client.login(username, password)
     log(f"✅ Ingelogd als: {username}")
 
-    # lijst ophalen
     try:
         members = client.app.bsky.graph.get_list({"list": LIST_URI}).items
         log(f"📋 {len(members)} gebruikers in lijst gevonden.")
@@ -39,16 +34,22 @@ def main():
 
     posts_to_check = []
 
-    # verzamel alle posts van alle gebruikers
     for member in members:
         handle = member.subject.handle
         try:
             feed = client.app.bsky.feed.get_author_feed({"actor": handle, "limit": 5})
+            if not feed.feed:
+                log(f"ℹ️ Geen posts gevonden voor @{handle}")
             for post in feed.feed:
-                record = post.post.record
+                record = getattr(post.post, "record", None) or getattr(post, "record", None)
+                if not record:
+                    continue
+
                 created_at = getattr(record, "createdAt", None)
                 if not created_at:
+                    log(f"⚠️ Geen createdAt voor @{handle}, skip.")
                     continue
+
                 posts_to_check.append({
                     "handle": handle,
                     "uri": post.post.uri,
@@ -59,9 +60,14 @@ def main():
         except Exception as e:
             log(f"⚠️ Fout bij ophalen feed @{handle}: {e}")
 
-    # sorteer op tijd (nieuwste eerst)
+    log(f"🕒 {len(posts_to_check)} totale posts verzameld vóór filtering.")
+
+    if not posts_to_check:
+        log("🚫 Geen posts gevonden. Controleer of gebruikers recente originele posts hebben.")
+        return
+
+    # sorteer nieuwste bovenaan
     posts_to_check.sort(key=lambda x: x["created_at"], reverse=True)
-    log(f"🕒 {len(posts_to_check)} totale posts verzameld en op tijd gesorteerd.")
 
     total_reposts = 0
     total_likes = 0
@@ -74,27 +80,24 @@ def main():
         cid = entry["cid"]
         post = entry["post"]
 
-        # overslaan van reposts van anderen
+        # skip reposts, replies, embeds van anderen
         if hasattr(post, "reason") and post.reason is not None:
+            log(f"↩️ @{handle}: overslaan (repost)")
             continue
-
-        # overslaan van replies
         record = post.post.record
         if getattr(record, "reply", None):
+            log(f"💬 @{handle}: overslaan (reply)")
             continue
-
-        # overslaan van embeds van andere gebruikers
         embed = getattr(post.post, "embed", None)
         if embed and hasattr(embed, "record"):
             rec = getattr(embed, "record", None)
             if rec and hasattr(rec, "author") and rec.author.handle != handle:
+                log(f"🔗 @{handle}: overslaan (embed van @{rec.author.handle})")
                 continue
 
-        # dubbele check
         if uri in done or uri in posted_this_run:
             continue
 
-        # limiet per gebruiker (3 behalve exempt)
         limit = 3 if handle != EXEMPT_HANDLE else float("inf")
         user_counts.setdefault(handle, 0)
         if user_counts[handle] >= limit:
@@ -133,7 +136,6 @@ def main():
         except Exception as e:
             log(f"⚠️ Fout bij repost @{handle}: {e}")
 
-    # logbestand bijwerken
     with open(repost_log, "w") as f:
         f.write("\n".join(done))
 
