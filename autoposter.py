@@ -12,7 +12,7 @@ EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
 # Configuratie
 MAX_PER_RUN = 50
 MAX_PER_USER = 5
-DAYS_BACK = 1  # 🔹 Alleen laatste 1 dag
+HOURS_BACK = 24  # 🔹 Alleen posts van laatste dag
 
 def log(msg: str):
     """Print logregel met tijdstempel"""
@@ -30,6 +30,19 @@ def parse_time(record, post):
                 continue
     return None
 
+def load_done_log(path="reposted.txt"):
+    """Laad bestaande repostlog"""
+    if not os.path.exists(path):
+        return set()
+    with open(path, "r") as f:
+        return set(line.strip() for line in f if line.strip())
+
+def save_done_log(done, path="reposted.txt"):
+    """Sla log op zonder duplicaten"""
+    with open(path, "w") as f:
+        for uri in sorted(done):
+            f.write(uri + "\n")
+
 def main():
     username = os.environ["BSKY_USERNAME"]
     password = os.environ["BSKY_PASSWORD"]
@@ -38,7 +51,6 @@ def main():
     client.login(username, password)
     log(f"✅ Ingelogd als {username}")
 
-    # Ophalen lijst met gebruikers
     try:
         members = client.app.bsky.graph.get_list({"list": LIST_URI}).items
         log(f"📋 {len(members)} gebruikers gevonden.")
@@ -48,15 +60,12 @@ def main():
 
     # Repostlog laden
     repost_log = "reposted.txt"
-    done = set()
-    if os.path.exists(repost_log):
-        with open(repost_log, "r") as f:
-            done = set(f.read().splitlines())
+    done = load_done_log(repost_log)
+    log(f"📁 {len(done)} bestaande reposts in log geladen.")
 
     all_posts = []
-    cutoff_time = datetime.now(timezone.utc) - timedelta(days=DAYS_BACK)
+    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=HOURS_BACK)
 
-    # Feeds ophalen
     for member in members:
         handle = member.subject.handle
         log(f"🔎 Check feed @{handle}")
@@ -83,7 +92,7 @@ def main():
                 if not created_dt:
                     continue
 
-                # Filter op datum
+                # Filter te oude posts
                 if created_dt < cutoff_time:
                     continue
 
@@ -116,7 +125,6 @@ def main():
         uri = post["uri"]
         cid = post["cid"]
 
-        # Per-gebruiker limiet
         if handle != EXEMPT_HANDLE:
             per_user_count[handle] = per_user_count.get(handle, 0)
             if per_user_count[handle] >= MAX_PER_USER:
@@ -155,9 +163,7 @@ def main():
         except Exception as e:
             log(f"⚠️ Fout bij repost @{handle}: {e}")
 
-    # Logbestand bijwerken
-    with open(repost_log, "w") as f:
-        f.write("\n".join(done))
+    save_done_log(done, repost_log)
 
     log(f"✅ Klaar met run! ({reposted} reposts, {liked} likes)")
     log(f"🧮 Samenvatting: {len(all_posts)} bekeken, {reposted} nieuw gerepost.")
