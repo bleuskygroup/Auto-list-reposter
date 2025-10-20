@@ -1,8 +1,8 @@
-name: Bluesky Auto Reposter (Feed versie)
+name: Bluesky Auto Reposter (Feed versie, stabiel)
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # elke 30 minuten
+    - cron: "*/30 * * * *"  # ongeveer elke 30 minuten
   workflow_dispatch:        # handmatig starten mogelijk
 
 jobs:
