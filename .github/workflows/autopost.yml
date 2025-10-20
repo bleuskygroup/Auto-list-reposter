@@ -2,8 +2,11 @@ name: Bluesky Auto Reposter (15min)
 
 on:
   schedule:
-    - cron: "*/15 * * * *"  # ⏱️ elke 15 minuten uitvoeren
-  workflow_dispatch:        # handmatig starten blijft mogelijk
+    # Basisinterval elke 15 minuten
+    - cron: "*/15 * * * *"
+    # Extra offset-starts om betrouwbaarder te zijn
+    - cron: "7-59/15 * * * *"
+  workflow_dispatch:  # handmatig starten blijft mogelijk
 
 jobs:
   run:
