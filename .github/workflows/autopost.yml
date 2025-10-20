@@ -1,9 +1,9 @@
-name: Bluesky Auto Reposter
+name: Bluesky Auto Reposter (Feed versie)
 
 on:
   schedule:
-    - cron: "*/15 * * * *"  # ⏰ elke 15 minuten uitvoeren
-  workflow_dispatch:          # handmatig starten blijft mogelijk
+    - cron: "*/30 * * * *"  # elke 30 minuten
+  workflow_dispatch:        # handmatig starten mogelijk
 
 jobs:
   run:
@@ -22,7 +22,7 @@ jobs:
         run: |
           pip install atproto
 
-      - name: 🚀 Run autoposter script
+      - name: 🚀 Run autoposter feed script
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
