@@ -9,10 +9,10 @@ LIST_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.graph.list/3m3iga6wnm
 # Gebruiker zonder repostlimiet
 EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
 
-# Config
+# Configuratie
 MAX_PER_RUN = 50
 MAX_PER_USER = 5
-MINUTES_BACK = 30   # 🔹 Alleen posts van de laatste 30 minuten
+DAYS_BACK = 1  # 🔹 Alleen laatste 1 dag
 
 def log(msg: str):
     """Print logregel met tijdstempel"""
@@ -54,8 +54,7 @@ def main():
             done = set(f.read().splitlines())
 
     all_posts = []
-    cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=MINUTES_BACK)
-    log(f"🕐 Filter: alleen posts sinds {cutoff_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    cutoff_time = datetime.now(timezone.utc) - timedelta(days=DAYS_BACK)
 
     # Feeds ophalen
     for member in members:
@@ -82,10 +81,9 @@ def main():
                 # Tijd ophalen
                 created_dt = parse_time(record, post)
                 if not created_dt:
-                    log(f"   ⚪ @{handle} → SKIP: geen tijd gevonden ({uri})")
                     continue
 
-                # Filter op laatste 30 minuten
+                # Filter op datum
                 if created_dt < cutoff_time:
                     continue
 
