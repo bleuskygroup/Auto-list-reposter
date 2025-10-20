@@ -9,10 +9,10 @@ LIST_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.graph.list/3m3iga6wnm
 # Gebruiker zonder repostlimiet
 EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
 
-# Configuratie
+# Config
 MAX_PER_RUN = 50
 MAX_PER_USER = 5
-HOURS_BACK = 24  # 🔹 Alleen posts van laatste dag
+HOURS_BACK = 24  # enkel laatste dag (24 uur)
 
 def log(msg: str):
     """Print logregel met tijdstempel"""
@@ -30,18 +30,15 @@ def parse_time(record, post):
                 continue
     return None
 
-def load_done_log(path="reposted.txt"):
-    """Laad bestaande repostlog"""
+def load_done(path):
     if not os.path.exists(path):
         return set()
     with open(path, "r") as f:
         return set(line.strip() for line in f if line.strip())
 
-def save_done_log(done, path="reposted.txt"):
-    """Sla log op zonder duplicaten"""
-    with open(path, "w") as f:
-        for uri in sorted(done):
-            f.write(uri + "\n")
+def append_done(path, uri):
+    with open(path, "a") as f:
+        f.write(uri + "\n")
 
 def main():
     username = os.environ["BSKY_USERNAME"]
@@ -51,6 +48,7 @@ def main():
     client.login(username, password)
     log(f"✅ Ingelogd als {username}")
 
+    # Ophalen lijst met gebruikers
     try:
         members = client.app.bsky.graph.get_list({"list": LIST_URI}).items
         log(f"📋 {len(members)} gebruikers gevonden.")
@@ -58,14 +56,13 @@ def main():
         log(f"⚠️ Fout bij ophalen lijst: {e}")
         return
 
-    # Repostlog laden
     repost_log = "reposted.txt"
-    done = load_done_log(repost_log)
-    log(f"📁 {len(done)} bestaande reposts in log geladen.")
-
-    all_posts = []
+    done = load_done(repost_log)
     cutoff_time = datetime.now(timezone.utc) - timedelta(hours=HOURS_BACK)
 
+    all_posts = []
+
+    # Feeds ophalen
     for member in members:
         handle = member.subject.handle
         log(f"🔎 Check feed @{handle}")
@@ -77,23 +74,15 @@ def main():
                 uri = post.uri
                 cid = post.cid
 
-                # Reposts en replies overslaan
                 if hasattr(item, "reason") and item.reason is not None:
                     continue
                 if getattr(record, "reply", None):
                     continue
-
-                # Skip dubbele of eerder geposte
                 if uri in done:
                     continue
 
-                # Tijd ophalen
                 created_dt = parse_time(record, post)
-                if not created_dt:
-                    continue
-
-                # Filter te oude posts
-                if created_dt < cutoff_time:
+                if not created_dt or created_dt < cutoff_time:
                     continue
 
                 all_posts.append({
@@ -107,7 +96,7 @@ def main():
 
     log(f"🕒 {len(all_posts)} totale posts verzameld (voor filtering).")
 
-    # Sorteer op tijd (oudste eerst)
+    # Sorteer oudste eerst
     all_posts.sort(key=lambda x: x["created"])
 
     reposted = 0
@@ -139,10 +128,11 @@ def main():
                     "createdAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 },
             )
-            log(f"🔁 Gerepost @{handle}: {uri}")
+            append_done(repost_log, uri)
             done.add(uri)
             reposted += 1
             per_user_count[handle] = per_user_count.get(handle, 0) + 1
+            log(f"🔁 Gerepost @{handle}: {uri}")
             time.sleep(2)
 
             # Like uitvoeren
@@ -154,16 +144,14 @@ def main():
                         "createdAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     },
                 )
-                log(f"❤️ Geliked @{handle}: {uri}")
                 liked += 1
+                log(f"❤️ Geliked @{handle}: {uri}")
                 time.sleep(1)
             except Exception as e_like:
                 log(f"⚠️ Fout bij liken @{handle}: {e_like}")
 
         except Exception as e:
             log(f"⚠️ Fout bij repost @{handle}: {e}")
-
-    save_done_log(done, repost_log)
 
     log(f"✅ Klaar met run! ({reposted} reposts, {liked} likes)")
     log(f"🧮 Samenvatting: {len(all_posts)} bekeken, {reposted} nieuw gerepost.")
