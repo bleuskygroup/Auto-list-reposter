@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime
 from atproto import Client, client_utils
 
 # === CONFIG ===
@@ -8,6 +9,10 @@ MAX_POSTS_PER_RUN = 25
 MAX_POSTS_PER_USER = 5
 DELAY_BETWEEN_POSTS = 60  # seconden
 DELAY_THRESHOLD = 5  # pas vertraging toe als er meer dan 5 reposts zijn
+
+def log(msg):
+    now = datetime.now().strftime("%H:%M:%S")
+    print(f"[{now}] {msg}")
 
 def login(username, password):
     client = Client()
@@ -19,14 +24,15 @@ def get_new_feed_posts(client, feed_uri):
     new_posts = []
     for item in reversed(feed):  # oudste eerst
         post = item.post
-        uri = post.uri
-        cid = post.cid
-        author = post.author.did
-        new_posts.append({"uri": uri, "cid": cid, "author": author})
+        new_posts.append({
+            "uri": post.uri,
+            "cid": post.cid,
+            "author": post.author.did
+        })
     return new_posts
 
 def repost_feed(client, feed_uri):
-    print(f"Fetching feed: {feed_uri}")
+    log(f"Fetching feed: {feed_uri}")
     posts = get_new_feed_posts(client, feed_uri)
 
     seen_uris = set()
@@ -49,17 +55,17 @@ def repost_feed(client, feed_uri):
             reposted_count += 1
             per_user[post["author"]] = user_count + 1
             seen_uris.add(post["uri"])
-            print(f"✅ Reposted {post['uri']} ({reposted_count})")
+            log(f"✅ Reposted {post['uri']} ({reposted_count})")
 
-            # Vertraging alleen als meer dan drempel aantal reposts
+            # Alleen vertragen als meer dan DELAY_THRESHOLD reposts
             if reposted_count > DELAY_THRESHOLD:
-                print(f"⏱ Wachten {DELAY_BETWEEN_POSTS}s voor volgende repost...")
+                log(f"⏱ Wachten {DELAY_BETWEEN_POSTS}s...")
                 time.sleep(DELAY_BETWEEN_POSTS)
 
         except Exception as e:
-            print(f"❌ Fout bij {post['uri']}: {e}")
+            log(f"❌ Fout bij {post['uri']}: {e}")
 
-    print(f"🎯 Klaar: {reposted_count} reposts uitgevoerd.")
+    log(f"🎯 Klaar: {reposted_count} reposts uitgevoerd.")
 
 
 def main():
@@ -67,7 +73,7 @@ def main():
     password = os.getenv("BSKY_PASSWORD")
 
     if not username or not password:
-        print("❌ Geen inloggegevens gevonden.")
+        log("❌ Geen inloggegevens gevonden.")
         return
 
     client = login(username, password)
