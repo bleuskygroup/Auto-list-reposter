@@ -1,1 +1,78 @@
-1
+import os
+import time
+from atproto import Client, client_utils
+
+# === CONFIG ===
+FEED_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.feed.generator/aaaaph4xy7utg"
+MAX_POSTS_PER_RUN = 25
+MAX_POSTS_PER_USER = 5
+DELAY_BETWEEN_POSTS = 60  # seconden
+DELAY_THRESHOLD = 5  # pas vertraging toe als er meer dan 5 reposts zijn
+
+def login(username, password):
+    client = Client()
+    client.login(username, password)
+    return client
+
+def get_new_feed_posts(client, feed_uri):
+    feed = client.app.bsky.feed.get_feed({'feed': feed_uri, 'limit': 100}).feed
+    new_posts = []
+    for item in reversed(feed):  # oudste eerst
+        post = item.post
+        uri = post.uri
+        cid = post.cid
+        author = post.author.did
+        new_posts.append({"uri": uri, "cid": cid, "author": author})
+    return new_posts
+
+def repost_feed(client, feed_uri):
+    print(f"Fetching feed: {feed_uri}")
+    posts = get_new_feed_posts(client, feed_uri)
+
+    seen_uris = set()
+    reposted_count = 0
+    per_user = {}
+
+    for post in posts:
+        if reposted_count >= MAX_POSTS_PER_RUN:
+            break
+
+        user_count = per_user.get(post["author"], 0)
+        if user_count >= MAX_POSTS_PER_USER:
+            continue
+
+        if post["uri"] in seen_uris:
+            continue
+
+        try:
+            client_utils.post.repost(client, post["uri"], post["cid"])
+            reposted_count += 1
+            per_user[post["author"]] = user_count + 1
+            seen_uris.add(post["uri"])
+            print(f"✅ Reposted {post['uri']} ({reposted_count})")
+
+            # Vertraging alleen als meer dan drempel aantal reposts
+            if reposted_count > DELAY_THRESHOLD:
+                print(f"⏱ Wachten {DELAY_BETWEEN_POSTS}s voor volgende repost...")
+                time.sleep(DELAY_BETWEEN_POSTS)
+
+        except Exception as e:
+            print(f"❌ Fout bij {post['uri']}: {e}")
+
+    print(f"🎯 Klaar: {reposted_count} reposts uitgevoerd.")
+
+
+def main():
+    username = os.getenv("BSKY_USERNAME")
+    password = os.getenv("BSKY_PASSWORD")
+
+    if not username or not password:
+        print("❌ Geen inloggegevens gevonden.")
+        return
+
+    client = login(username, password)
+    repost_feed(client, FEED_URI)
+
+
+if __name__ == "__main__":
+    main()
