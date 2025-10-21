@@ -9,7 +9,8 @@ FEED_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.feed.generator/aaaprg
 # Configuratie
 MAX_PER_RUN = 50
 MAX_PER_USER = 5
-HOURS_BACK = 8
+HOURS_BACK = 3            # alleen posts uit de laatste 3 uur
+SPREAD_MINUTES = 30       # totale tijdsduur waarin de reposts worden verspreid
 
 def log(msg: str):
     """Print logregel met tijdstempel"""
@@ -88,7 +89,13 @@ def main():
     reposted = 0
     liked = 0
     per_user_count = {}
-    for post in all_posts:
+    posts_to_do = all_posts[:MAX_PER_RUN]
+
+    # Bereken vertraging (gelijk verdeeld over 30 minuten)
+    delay = (SPREAD_MINUTES * 60) / max(1, len(posts_to_do))
+    log(f"🕐 Vertraging ingesteld op ongeveer {round(delay,1)} seconden tussen reposts.")
+
+    for post in posts_to_do:
         if reposted >= MAX_PER_RUN:
             break
 
@@ -113,9 +120,8 @@ def main():
             done.add(uri)
             reposted += 1
             per_user_count[handle] += 1
-            time.sleep(2)
 
-            # Like
+            # Like direct na repost
             try:
                 client.app.bsky.feed.like.create(
                     repo=client.me.did,
@@ -126,9 +132,11 @@ def main():
                 )
                 log(f"❤️ Geliked @{handle}")
                 liked += 1
-                time.sleep(1)
             except Exception as e_like:
                 log(f"⚠️ Fout bij liken @{handle}: {e_like}")
+
+            # Wachten tot volgende repost (gelijkmatig over 30 min)
+            time.sleep(delay)
 
         except Exception as e:
             log(f"⚠️ Fout bij repost @{handle}: {e}")
