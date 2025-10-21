@@ -1,60 +1,92 @@
-name: Bluesky Auto Reposter (Feed versie, stabiel met autorestart en failsafe)
+from atproto import Client
+import os
+import time
+from datetime import datetime, timedelta, timezone
 
-on:
-  schedule:
-    - cron: "*/30 * * * *"   # basisplanning: elke 30 minuten
-  workflow_dispatch:
+# Feed URI (van je lijst-feed)
+FEED_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.feed.generator/aaaprg6dqhaii"
 
-jobs:
-  run:
-    runs-on: ubuntu-latest
-    env:
-      MAX_RUNTIME_HOURS: 48   # failsafe: stop na 48 uur
+# Config
+MAX_PER_RUN = 50
+HOURS_BACK = 4  # kijkt naar laatste 4 uur
 
-    steps:
-      - name: 📦 Checkout repository
-        uses: actions/checkout@v4
+def log(msg: str):
+    """Print logregel met tijdstempel"""
+    now = datetime.now(timezone.utc).strftime("[%H:%M:%S]")
+    print(f"{now} {msg}")
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+def main():
+    username = os.environ["BSKY_USERNAME"]
+    password = os.environ["BSKY_PASSWORD"]
 
-      - name: ⚙️ Install dependencies
-        run: |
-          pip install atproto requests
+    client = Client()
+    client.login(username, password)
+    log(f"✅ Ingelogd als {username}")
 
-      - name: 🚀 Run autoposter feed script
-        env:
-          BSKY_USERNAME: ${{ secrets.BSKY_USERNAME }}
-          BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
-        run: |
-          python autoposter.py
+    log("🔎 Ophalen feed...")
+    feed = client.app.bsky.feed.get_feed({"feed": FEED_URI, "limit": 100})
+    items = feed.feed
+    log(f"🕒 {len(items)} posts opgehaald.")
 
-      - name: 🔁 Controleer failsafe
-        id: check_runtime
-        run: |
-          echo "Controleer runtime..."
-          # Bereken hoe lang de workflow actief is
-          START_TIME=$(date -u -d "${{ github.run_started_at }}" +%s)
-          NOW=$(date -u +%s)
-          RUNTIME_HOURS=$(( (NOW - START_TIME) / 3600 ))
-          echo "Actieve tijd: $RUNTIME_HOURS uur"
-          if [ $RUNTIME_HOURS -ge $MAX_RUNTIME_HOURS ]; then
-            echo "⚠️ Failsafe actief — workflow draait al $RUNTIME_HOURS uur. Stoppen."
-            exit 1
-          fi
+    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=HOURS_BACK)
 
-      - name: 🔄 Trigger volgende run
-        if: ${{ success() }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          echo "Herstart workflow in 30 minuten..."
-          sleep 1800
-          curl -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            https://api.github.com/repos/$REPO/actions/workflows/reposter.yml/dispatches \
-            -d '{"ref":"main"}'
+    new_posts = []
+    for item in items:
+        post = item.post
+        record = post.record
+        uri = post.uri
+        cid = post.cid
+        handle = post.author.handle
+
+        # probeer tijd te lezen
+        created = getattr(record, "createdAt", None) or getattr(post, "indexedAt", None)
+        if not created:
+            continue
+        created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+
+        if created_dt >= cutoff_time:
+            new_posts.append({
+                "uri": uri,
+                "cid": cid,
+                "handle": handle,
+                "created": created_dt
+            })
+
+    log(f"📊 {len(new_posts)} posts worden verwerkt (max {MAX_PER_RUN}).")
+
+    reposted = 0
+    liked = 0
+    for post in sorted(new_posts, key=lambda x: x["created"]):
+        if reposted >= MAX_PER_RUN:
+            break
+        uri, cid, handle = post["uri"], post["cid"], post["handle"]
+        try:
+            client.app.bsky.feed.repost.create(
+                repo=client.me.did,
+                record={
+                    "subject": {"uri": uri, "cid": cid},
+                    "createdAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                },
+            )
+            log(f"🔁 Gerepost @{handle}: {uri}")
+            reposted += 1
+            time.sleep(2)
+
+            client.app.bsky.feed.like.create(
+                repo=client.me.did,
+                record={
+                    "subject": {"uri": uri, "cid": cid},
+                    "createdAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                },
+            )
+            log(f"❤️ Geliked @{handle}")
+            liked += 1
+            time.sleep(1)
+        except Exception as e:
+            log(f"⚠️ Fout bij posten @{handle}: {e}")
+
+    log(f"✅ Klaar! ({reposted} reposts, {liked} likes)")
+    log(f"⏰ Run beëindigd om {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+
+if __name__ == "__main__":
+    main()
