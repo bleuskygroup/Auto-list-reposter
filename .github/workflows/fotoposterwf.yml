@@ -1,0 +1,47 @@
+name: fotoposter
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"  # elke 30 minuten
+  workflow_dispatch:
+
+jobs:
+  hotbleusky:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install atproto
+
+      - name: Run fotoposter (HotBleusky)
+        env:
+          BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_HOTBSKY }}
+          BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_HOTBSKY }}
+        run: python fotoposter
+
+  dmphotos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install atproto
+
+      - name: Run fotoposter (DMPhotos)
+        env:
+          BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_DMPHOTOS }}
+          BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_DMPHOTOS }}
+        run: python fotoposter
