@@ -5,10 +5,10 @@ import os
 
 # 🔧 Instellingen
 FEED_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.feed.generator/aaaprg6dqhaii"
-HOURS_BACK = 2          # bekijkt posts van de laatste 2 uur
+HOURS_BACK = 2
 MAX_POSTS = 50
 MAX_PER_USER = 5
-SPREAD_MINUTES = 30     # verdeel reposts over deze tijd (30 minuten)
+SPREAD_MINUTES = 30  # verdeel reposts over 30 minuten
 
 def main():
     username = os.getenv("BSKY_USERNAME")
@@ -27,23 +27,31 @@ def main():
 
     posts = []
     for item in items:
-        post = item["post"]
-        author = post["author"]["handle"]
-        uri = post["uri"]
-        created = datetime.fromisoformat(post["record"]["createdAt"].replace("Z", "+00:00"))
-        if created > cutoff:
-            posts.append((author, uri, created))
+        try:
+            post = item["post"]
+            author = post["author"]["handle"]
+            uri = post["uri"]
+
+            # Sommige feed-items hebben geen 'createdAt' → sla over
+            created_raw = post["record"].get("createdAt")
+            if not created_raw:
+                continue
+
+            created = datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+            if created > cutoff:
+                posts.append((author, uri, created))
+
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ Feed-item overgeslagen ({e})")
+            continue
 
     posts.sort(key=lambda x: x[2])  # oudste eerst
     total_to_post = min(len(posts), MAX_POSTS)
 
     print(f"[{datetime.now().strftime('%H:%M:%S')}] 📊 {total_to_post} posts worden verwerkt (max {MAX_POSTS}).")
 
-    # Bereken automatische vertraging
-    if total_to_post > 0:
-        delay_per_post = (SPREAD_MINUTES * 60) / total_to_post
-    else:
-        delay_per_post = 0
+    # Bereken automatische vertraging (verdeel over 30 minuten)
+    delay_per_post = (SPREAD_MINUTES * 60) / total_to_post if total_to_post > 0 else 0
     print(f"[{datetime.now().strftime('%H:%M:%S')}] ⏱️ Reposts worden automatisch verdeeld: {delay_per_post:.1f} seconden per post.")
 
     user_counts = {}
