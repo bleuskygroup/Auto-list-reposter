@@ -1,3 +1,4 @@
+
 import os
 import time
 from datetime import datetime
@@ -7,8 +8,7 @@ from atproto import Client
 FEED_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.feed.generator/aaaaph4xy7utg"
 MAX_POSTS_PER_RUN = 25
 MAX_POSTS_PER_USER = 5
-DELAY_BETWEEN_POSTS = 60  # seconden
-DELAY_THRESHOLD = 5  # pas vertraging toe als er meer dan 5 reposts zijn
+TOTAL_RUN_MINUTES = 30  # Verdeel reposts over 30 minuten
 
 def log(msg: str):
     now = datetime.now().strftime("%H:%M:%S")
@@ -39,17 +39,25 @@ def repost_feed(client: Client, feed_uri: str):
     reposted_count = 0
     per_user = {}
 
+    # Filter alvast op limieten
+    filtered_posts = []
     for post in posts:
-        if reposted_count >= MAX_POSTS_PER_RUN:
+        if len(filtered_posts) >= MAX_POSTS_PER_RUN:
             break
-
-        user_count = per_user.get(post["author"], 0)
-        if user_count >= MAX_POSTS_PER_USER:
+        if per_user.get(post["author"], 0) >= MAX_POSTS_PER_USER:
             continue
+        per_user[post["author"]] = per_user.get(post["author"], 0) + 1
+        filtered_posts.append(post)
 
-        if post["uri"] in seen_uris:
-            continue
+    total_to_repost = len(filtered_posts)
+    if total_to_repost == 0:
+        log("Geen nieuwe posts om te reposteren.")
+        return
 
+    delay_per_post = int((TOTAL_RUN_MINUTES * 60) / total_to_repost)
+    log(f"Verdeel {total_to_repost} reposts over {TOTAL_RUN_MINUTES} minuten (~{delay_per_post}s per repost)")
+
+    for idx, post in enumerate(filtered_posts, start=1):
         try:
             # === Repost ===
             client.app.bsky.feed.repost.create(
@@ -60,7 +68,7 @@ def repost_feed(client: Client, feed_uri: str):
                     "$type": "app.bsky.feed.repost",
                 },
             )
-            log(f"✅ Reposted {post['uri']}")
+            log(f"✅ ({idx}/{total_to_repost}) Reposted {post['uri']}")
 
             # === Like ===
             client.app.bsky.feed.like.create(
@@ -71,15 +79,13 @@ def repost_feed(client: Client, feed_uri: str):
                     "$type": "app.bsky.feed.like",
                 },
             )
-            log(f"❤️ Liked {post['uri']}")
+            log(f"❤️ ({idx}/{total_to_repost}) Liked {post['uri']}")
 
             reposted_count += 1
-            per_user[post["author"]] = user_count + 1
-            seen_uris.add(post["uri"])
 
-            if reposted_count > DELAY_THRESHOLD:
-                log(f"⏱ Wachten {DELAY_BETWEEN_POSTS}s...")
-                time.sleep(DELAY_BETWEEN_POSTS)
+            if idx < total_to_repost:
+                log(f"⏱ Wachten {delay_per_post}s voor volgende repost...")
+                time.sleep(delay_per_post)
 
         except Exception as e:
             log(f"❌ Fout bij {post['uri']}: {e}")
