@@ -10,17 +10,14 @@ MAX_POSTS_PER_USER = 5
 DELAY_BETWEEN_POSTS = 60  # seconden
 DELAY_THRESHOLD = 5  # pas vertraging toe als er meer dan 5 reposts zijn
 
-
 def log(msg: str):
     now = datetime.now().strftime("%H:%M:%S")
     print(f"[{now}] {msg}")
-
 
 def login(username: str, password: str) -> Client:
     client = Client()
     client.login(username, password)
     return client
-
 
 def get_new_feed_posts(client: Client, feed_uri: str):
     feed = client.app.bsky.feed.get_feed({"feed": feed_uri, "limit": 100}).feed
@@ -33,7 +30,6 @@ def get_new_feed_posts(client: Client, feed_uri: str):
             "author": post.author.did
         })
     return new_posts
-
 
 def repost_feed(client: Client, feed_uri: str):
     log(f"Fetching feed: {feed_uri}")
@@ -55,6 +51,7 @@ def repost_feed(client: Client, feed_uri: str):
             continue
 
         try:
+            # === Repost ===
             client.app.bsky.feed.repost.create(
                 repo=client.me.did,
                 record={
@@ -63,11 +60,22 @@ def repost_feed(client: Client, feed_uri: str):
                     "$type": "app.bsky.feed.repost",
                 },
             )
+            log(f"✅ Reposted {post['uri']}")
+
+            # === Like ===
+            client.app.bsky.feed.like.create(
+                repo=client.me.did,
+                record={
+                    "subject": {"uri": post["uri"], "cid": post["cid"]},
+                    "createdAt": client.get_current_time_iso(),
+                    "$type": "app.bsky.feed.like",
+                },
+            )
+            log(f"❤️ Liked {post['uri']}")
 
             reposted_count += 1
             per_user[post["author"]] = user_count + 1
             seen_uris.add(post["uri"])
-            log(f"✅ Reposted {post['uri']} ({reposted_count})")
 
             if reposted_count > DELAY_THRESHOLD:
                 log(f"⏱ Wachten {DELAY_BETWEEN_POSTS}s...")
@@ -76,8 +84,7 @@ def repost_feed(client: Client, feed_uri: str):
         except Exception as e:
             log(f"❌ Fout bij {post['uri']}: {e}")
 
-    log(f"🎯 Klaar: {reposted_count} reposts uitgevoerd.")
-
+    log(f"🎯 Klaar: {reposted_count} reposts uitgevoerd (+ likes).")
 
 def main():
     username = os.getenv("BSKY_USERNAME")
@@ -89,7 +96,6 @@ def main():
 
     client = login(username, password)
     repost_feed(client, FEED_URI)
-
 
 if __name__ == "__main__":
     main()
