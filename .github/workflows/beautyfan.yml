@@ -1,0 +1,30 @@
+name: Bluesky Auto Reposter (Beautyfan)
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"  # elke 30 minuten uitvoeren
+  workflow_dispatch:        # handmatig starten mogelijk
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install atproto
+
+      - name: Run autoposter for Beautyfan
+        env:
+          BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_2 }}
+          BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_2 }}
+        run: |
+          python autoposter.py
