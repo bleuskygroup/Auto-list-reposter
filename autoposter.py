@@ -9,7 +9,7 @@ FEED_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.feed.generator/aaaprg
 # Configuratie
 MAX_PER_RUN = 50
 MAX_PER_USER = 5
-HOURS_BACK = 3            # alleen posts uit de laatste 3 uur
+HOURS_BACK = 4            # alleen posts uit de laatste 4 uur
 SPREAD_MINUTES = 30       # totale tijdsduur waarin de reposts worden verspreid
 
 def log(msg: str):
