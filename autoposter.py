@@ -1,143 +1,60 @@
-from atproto import Client
-import os
-import time
-from datetime import datetime, timedelta, timezone
+name: Bluesky Auto Reposter (Feed versie, stabiel met autorestart en failsafe)
 
-# 🔗 Bluesky-feed (feed generator, geen lijst)
-FEED_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.feed.generator/aaaprg6dqhaii"
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # basisplanning: elke 30 minuten
+  workflow_dispatch:
 
-# Gebruiker zonder repostlimiet (optioneel)
-EXEMPT_HANDLE = "bleuskybeauty.bsky.social"
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      MAX_RUNTIME_HOURS: 48   # failsafe: stop na 48 uur
 
-# Config
-MAX_PER_RUN = 50
-MAX_PER_USER = 5
-HOURS_BACK = 2  # laatste 2 uur
+    steps:
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v4
 
-def log(msg: str):
-    now = datetime.now(timezone.utc).strftime("[%H:%M:%S]")
-    print(f"{now} {msg}")
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-def parse_time(record, post):
-    for attr in ["createdAt", "indexedAt", "created_at", "timestamp"]:
-        val = getattr(record, attr, None) or getattr(post, attr, None)
-        if val:
-            try:
-                return datetime.fromisoformat(val.replace("Z", "+00:00"))
-            except Exception:
-                continue
-    return None
+      - name: ⚙️ Install dependencies
+        run: |
+          pip install atproto requests
 
-def main():
-    username = os.environ["BSKY_USERNAME"]
-    password = os.environ["BSKY_PASSWORD"]
+      - name: 🚀 Run autoposter feed script
+        env:
+          BSKY_USERNAME: ${{ secrets.BSKY_USERNAME }}
+          BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
+        run: |
+          python autoposter.py
 
-    client = Client()
-    client.login(username, password)
-    log(f"✅ Ingelogd als {username}")
-    log("🔎 Ophalen feed...")
+      - name: 🔁 Controleer failsafe
+        id: check_runtime
+        run: |
+          echo "Controleer runtime..."
+          # Bereken hoe lang de workflow actief is
+          START_TIME=$(date -u -d "${{ github.run_started_at }}" +%s)
+          NOW=$(date -u +%s)
+          RUNTIME_HOURS=$(( (NOW - START_TIME) / 3600 ))
+          echo "Actieve tijd: $RUNTIME_HOURS uur"
+          if [ $RUNTIME_HOURS -ge $MAX_RUNTIME_HOURS ]; then
+            echo "⚠️ Failsafe actief — workflow draait al $RUNTIME_HOURS uur. Stoppen."
+            exit 1
+          fi
 
-    try:
-        feed = client.app.bsky.feed.get_feed({"feed": FEED_URI, "limit": 100})
-    except Exception as e:
-        log(f"⚠️ Fout bij ophalen feed: {e}")
-        return
-
-    items = feed.feed
-    log(f"🕒 {len(items)} posts opgehaald.")
-
-    repost_log = "reposted.txt"
-    done = set()
-    if os.path.exists(repost_log):
-        with open(repost_log, "r") as f:
-            done = set(f.read().splitlines())
-
-    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=HOURS_BACK)
-
-    posts = []
-    for item in items:
-        post = item.post
-        record = post.record
-        uri = post.uri
-        cid = post.cid
-        handle = post.author.handle
-
-        # Skip reposts/replies
-        if hasattr(item, "reason") and item.reason is not None:
-            continue
-        if getattr(record, "reply", None):
-            continue
-        if uri in done:
-            continue
-
-        created = parse_time(record, post)
-        if not created:
-            continue
-        if created < cutoff_time:
-            continue
-
-        posts.append({
-            "handle": handle,
-            "uri": uri,
-            "cid": cid,
-            "created": created,
-        })
-
-    posts.sort(key=lambda x: x["created"])
-    log(f"📊 {len(posts)} posts worden verwerkt (max {MAX_PER_RUN}).")
-
-    reposted = 0
-    liked = 0
-    per_user = {}
-
-    for p in posts[:MAX_PER_RUN]:
-        if reposted >= MAX_PER_RUN:
-            break
-
-        handle, uri, cid = p["handle"], p["uri"], p["cid"]
-        if handle != EXEMPT_HANDLE:
-            per_user[handle] = per_user.get(handle, 0)
-            if per_user[handle] >= MAX_PER_USER:
-                continue
-
-        try:
-            client.app.bsky.feed.repost.create(
-                repo=client.me.did,
-                record={
-                    "subject": {"uri": uri, "cid": cid},
-                    "createdAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                },
-            )
-            log(f"🔁 Gerepost @{handle}: {uri}")
-            reposted += 1
-            per_user[handle] = per_user.get(handle, 0) + 1
-            done.add(uri)
-            # direct opslaan om dubbel te vermijden
-            with open(repost_log, "a") as f:
-                f.write(uri + "\n")
-
-            time.sleep(2)
-
-            try:
-                client.app.bsky.feed.like.create(
-                    repo=client.me.did,
-                    record={
-                        "subject": {"uri": uri, "cid": cid},
-                        "createdAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    },
-                )
-                log(f"❤️ Geliked @{handle}")
-                liked += 1
-                time.sleep(1)
-            except Exception as e:
-                log(f"⚠️ Fout bij liken @{handle}: {e}")
-
-        except Exception as e:
-            log(f"⚠️ Fout bij repost @{handle}: {e}")
-
-    log(f"✅ Klaar! ({reposted} reposts, {liked} likes)")
-    log(f"🧮 Totaal bekeken: {len(items)}, nieuw gerepost: {reposted}")
-    log(f"⏰ Run beëindigd om {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
-
-if __name__ == "__main__":
-    main()
+      - name: 🔄 Trigger volgende run
+        if: ${{ success() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "Herstart workflow in 30 minuten..."
+          sleep 1800
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/$REPO/actions/workflows/reposter.yml/dispatches \
+            -d '{"ref":"main"}'
