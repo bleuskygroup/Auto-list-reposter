@@ -2,7 +2,7 @@ name: Bluesky Auto Reposter (fotoposter - veilig)
 
 on:
   schedule:
-    - cron: "0 * * * *"  # draait elk uur
+    - cron: "*/30 * * * *"  # draait elke 30 minuten
   workflow_dispatch:
 
 jobs:
@@ -17,17 +17,13 @@ jobs:
       - name: Install dependencies
         run: pip install atproto
 
-      - name: Run fotoposter (HotBleusky - 2 runs, 30 min interval)
+      - name: Run fotoposter (HotBleusky)
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_HOTBSKY }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_HOTBSKY }}
           BSKY_FEED_URI: ${{ secrets.BSKY_FEED_URI }}
         run: |
-          echo "🚀 Start HotBleusky reposter - run 1"
-          python fotoposter.py > /dev/null 2>&1 || true
-          echo "⏱ Wachten 30 minuten..."
-          sleep 1800
-          echo "🚀 Start HotBleusky reposter - run 2"
+          echo "🚀 Start HotBleusky reposter"
           python fotoposter.py > /dev/null 2>&1 || true
           echo "✅ HotBleusky run voltooid."
 
@@ -42,16 +38,12 @@ jobs:
       - name: Install dependencies
         run: pip install atproto
 
-      - name: Run fotoposter (DMPhotos - 2 runs, 30 min interval)
+      - name: Run fotoposter (DMPhotos)
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_DMPHOTOS }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_DMPHOTOS }}
           BSKY_FEED_URI: ${{ secrets.BSKY_FEED_URI }}
         run: |
-          echo "🚀 Start DMPhotos reposter - run 1"
-          python fotoposter.py > /dev/null 2>&1 || true
-          echo "⏱ Wachten 30 minuten..."
-          sleep 1800
-          echo "🚀 Start DMPhotos reposter - run 2"
+          echo "🚀 Start DMPhotos reposter"
           python fotoposter.py > /dev/null 2>&1 || true
           echo "✅ DMPhotos run voltooid."
