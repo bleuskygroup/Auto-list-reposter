@@ -2,7 +2,7 @@ name: 📸 Bluesky Auto Reposter (fotoposter - veilig)
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # elke 30 minuten
+    - cron: "*/30 * * * *"  # draait elke 30 minuten
   workflow_dispatch:        # handmatig starten toegestaan
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: 📦 Install dependencies
         run: pip install atproto requests
@@ -27,7 +27,7 @@ jobs:
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_HOTBSKY }}
         run: |
           echo "🚀 Start HotBleusky reposter"
-          python fotoposter.py || true
+          python fotoposter.py
           echo "✅ HotBleusky run voltooid."
 
   repost_dmphotos:
@@ -40,7 +40,7 @@ jobs:
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: 📦 Install dependencies
         run: pip install atproto requests
@@ -51,5 +51,5 @@ jobs:
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_DMPHOTOS }}
         run: |
           echo "🚀 Start DMPhotos reposter"
-          python fotoposter.py || true
+          python fotoposter.py
           echo "✅ DMPhotos run voltooid."
