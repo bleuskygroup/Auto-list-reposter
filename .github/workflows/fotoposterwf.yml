@@ -2,7 +2,7 @@ name: Bluesky Auto Reposter (fotoposter - veilig)
 
 on:
   schedule:
-    - cron: "0 * * * *"  # elk uur
+    - cron: "0 * * * *"  # draait elk uur
   workflow_dispatch:
 
 jobs:
@@ -17,18 +17,19 @@ jobs:
       - name: Install dependencies
         run: pip install atproto
 
-      - name: Run fotoposter (HotBleusky - run 1 & 2)
+      - name: Run fotoposter (HotBleusky - 2 runs, 30 min interval)
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_HOTBSKY }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_HOTBSKY }}
           BSKY_FEED_URI: ${{ secrets.BSKY_FEED_URI }}
         run: |
-          echo "Running HotBleusky reposter - first run"
-          python fotoposter.py > /dev/null 2>&1
-          echo "Waiting 30 minutes before second run..."
+          echo "🚀 Start HotBleusky reposter - run 1"
+          python fotoposter.py > /dev/null 2>&1 || true
+          echo "⏱ Wachten 30 minuten..."
           sleep 1800
-          echo "Running HotBleusky reposter - second run"
-          python fotoposter.py > /dev/null 2>&1
+          echo "🚀 Start HotBleusky reposter - run 2"
+          python fotoposter.py > /dev/null 2>&1 || true
+          echo "✅ HotBleusky run voltooid."
 
   dmphotos:
     runs-on: ubuntu-latest
@@ -41,15 +42,16 @@ jobs:
       - name: Install dependencies
         run: pip install atproto
 
-      - name: Run fotoposter (DMPhotos - run 1 & 2)
+      - name: Run fotoposter (DMPhotos - 2 runs, 30 min interval)
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_DMPHOTOS }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_DMPHOTOS }}
           BSKY_FEED_URI: ${{ secrets.BSKY_FEED_URI }}
         run: |
-          echo "Running DMPhotos reposter - first run"
-          python fotoposter.py > /dev/null 2>&1
-          echo "Waiting 30 minutes before second run..."
+          echo "🚀 Start DMPhotos reposter - run 1"
+          python fotoposter.py > /dev/null 2>&1 || true
+          echo "⏱ Wachten 30 minuten..."
           sleep 1800
-          echo "Running DMPhotos reposter - second run"
-          python fotoposter.py > /dev/null 2>&1
+          echo "🚀 Start DMPhotos reposter - run 2"
+          python fotoposter.py > /dev/null 2>&1 || true
+          echo "✅ DMPhotos run voltooid."
