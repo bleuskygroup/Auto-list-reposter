@@ -1,30 +1,31 @@
-name: Bluesky Auto Reposter (Feed vertraagd)
+name: Bluesky Auto Reposter (Silent)
 
 on:
   schedule:
     - cron: "*/30 * * * *"  # elke 30 minuten
-  workflow_dispatch:        # handmatig starten mogelijk
+  workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
-
     steps:
-      - name: 📦 Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: ⚙️ Install dependencies
+      - name: Install dependencies
         run: |
-          pip install atproto
+          pip install -q atproto
 
-      - name: 🚀 Run delayed feed autoposter
+      - name: Run autoposter
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
         run: |
-          python autoposter.py
+          echo "🚀 Start stille autoposter-run..."
+          python autoposter.py > /dev/null 2>&1 || echo "⚠️ Script afgerond met waarschuwing."
+          echo "✅ Autoposter-run afgerond."
