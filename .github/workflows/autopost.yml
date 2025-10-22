@@ -8,24 +8,24 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
+      - name: 📦 Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          pip install -q atproto
+      - name: ⚙️ Install dependencies
+        run: pip install atproto
 
-      - name: Run autoposter
+      - name: 🚀 Start stille autoposter-run
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD }}
         run: |
           echo "🚀 Start stille autoposter-run..."
-          python autoposter.py > /dev/null 2>&1 || echo "⚠️ Script afgerond met waarschuwing."
+          python autoposter.py > autoposter_log.txt 2>&1 || echo "⚠️ Script afgerond met waarschuwing (zie autoposter_log.txt)"
           echo "✅ Autoposter-run afgerond."
