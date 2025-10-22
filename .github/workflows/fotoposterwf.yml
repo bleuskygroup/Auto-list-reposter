@@ -1,49 +1,55 @@
-name: Bluesky Auto Reposter (fotoposter - veilig)
+name: 📸 Bluesky Auto Reposter (fotoposter - veilig)
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # draait elke 30 minuten
-  workflow_dispatch:
+    - cron: "*/30 * * * *"  # elke 30 minuten
+  workflow_dispatch:        # handmatig starten toegestaan
 
 jobs:
-  hotbleusky:
+  repost_hotbleusky:
+    name: 🔁 HotBleusky
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: 📂 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install atproto
+      - name: 📦 Install dependencies
+        run: pip install atproto requests
 
-      - name: Run fotoposter (HotBleusky)
+      - name: 🚀 Start HotBleusky reposter
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_HOTBSKY }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_HOTBSKY }}
-          BSKY_FEED_URI: ${{ secrets.BSKY_FEED_URI }}
         run: |
           echo "🚀 Start HotBleusky reposter"
-          python fotoposter.py > /dev/null 2>&1 || true
+          python fotoposter.py || true
           echo "✅ HotBleusky run voltooid."
 
-  dmphotos:
+  repost_dmphotos:
+    name: 🔁 DMPhotos
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: 📂 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install atproto
+      - name: 📦 Install dependencies
+        run: pip install atproto requests
 
-      - name: Run fotoposter (DMPhotos)
+      - name: 🚀 Start DMPhotos reposter
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_DMPHOTOS }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_DMPHOTOS }}
-          BSKY_FEED_URI: ${{ secrets.BSKY_FEED_URI }}
         run: |
           echo "🚀 Start DMPhotos reposter"
-          python fotoposter.py > /dev/null 2>&1 || true
+          python fotoposter.py || true
           echo "✅ DMPhotos run voltooid."
