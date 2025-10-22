@@ -12,25 +12,29 @@ DELAY_BETWEEN_POSTS = 2
 LOOKBACK_HOURS = 2
 
 def log(msg: str):
-    """Veilige log zonder gevoelige data"""
+    """Veilige logfunctie (geen gevoelige data)"""
     now = datetime.now().strftime("%H:%M:%S")
     print(f"[{now}] {msg}")
 
 def login(username: str, password: str) -> Client:
     client = Client()
     client.login(username, password)
+    log("🔑 Login succesvol.")
     return client
 
 def get_feed_items(feed_uri: str):
-    """Haalt feeditems op via Bluesky public API (betrouwbaarder dan atproto feed.get_feed)"""
+    """Haalt feeditems op via Bluesky publieke API"""
     url = f"https://public.api.bsky.app/xrpc/app.bsky.feed.getFeed?feed={feed_uri}"
+    log(f"🌐 Ophalen feed: {url}")
     response = requests.get(url, timeout=15)
-    response.raise_for_status()
+    if response.status_code != 200:
+        log(f"⚠️ Feed request mislukt: {response.status_code}")
+        return []
     data = response.json()
     return data.get("feed", [])
 
 def get_recent_posts(feed_items):
-    """Filtert alleen recente posts binnen LOOKBACK_HOURS"""
+    """Filter posts van de laatste LOOKBACK_HOURS uren"""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
     recent_posts = []
 
@@ -38,11 +42,13 @@ def get_recent_posts(feed_items):
         post = item.get("post", {})
         record = post.get("record", {})
         created_at = record.get("createdAt")
+
         try:
             post_time = datetime.fromisoformat(created_at.replace("Z", "+00:00")) if created_at else None
         except Exception:
             post_time = None
 
+        # Als er geen datum is, of binnen tijdsvenster
         if not post_time or post_time >= cutoff:
             uri = post.get("uri")
             cid = post.get("cid")
@@ -55,8 +61,14 @@ def get_recent_posts(feed_items):
 def repost_and_like_feed(client: Client):
     log("📡 Ophalen feed via publieke API...")
     feed_items = get_feed_items(FEED_URI)
+    log(f"Feeditems ontvangen: {len(feed_items)}")
+
     posts = get_recent_posts(feed_items)
     log(f"Gevonden {len(posts)} recente posts binnen {LOOKBACK_HOURS} uur.")
+
+    if len(posts) == 0:
+        log("⚠️ Geen posts ontvangen — controleer of feed-ID klopt of of posts ouder zijn dan 2 uur.")
+        return
 
     seen_uris = set()
     per_user = {}
@@ -97,6 +109,7 @@ def repost_and_like_feed(client: Client):
             reposted_count += 1
             per_user[author] = per_user.get(author, 0) + 1
             seen_uris.add(post["uri"])
+
             log(f"✅ Repost + like uitgevoerd ({reposted_count}/{MAX_POSTS_PER_RUN})")
 
             if reposted_count < MAX_POSTS_PER_RUN:
@@ -115,7 +128,12 @@ def main():
         log("❌ Geen inloggegevens gevonden (BSKY_USERNAME/BSKY_PASSWORD).")
         return
 
-    client = login(username, password)
+    try:
+        client = login(username, password)
+    except Exception as e:
+        log(f"❌ Inloggen mislukt: {e}")
+        return
+
     repost_and_like_feed(client)
 
 if __name__ == "__main__":
