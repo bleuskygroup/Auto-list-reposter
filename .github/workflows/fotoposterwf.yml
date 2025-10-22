@@ -1,1 +1,55 @@
-1
+name: Bluesky Auto Reposter (fotoposter - veilig)
+
+on:
+  schedule:
+    - cron: "0 * * * *"  # elk uur
+  workflow_dispatch:
+
+jobs:
+  hotbleusky:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install atproto
+
+      - name: Run fotoposter (HotBleusky - run 1 & 2)
+        env:
+          BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_HOTBSKY }}
+          BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_HOTBSKY }}
+          BSKY_FEED_URI: ${{ secrets.BSKY_FEED_URI }}
+        run: |
+          echo "Running HotBleusky reposter - first run"
+          python fotoposter.py > /dev/null 2>&1
+          echo "Waiting 30 minutes before second run..."
+          sleep 1800
+          echo "Running HotBleusky reposter - second run"
+          python fotoposter.py > /dev/null 2>&1
+
+  dmphotos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install atproto
+
+      - name: Run fotoposter (DMPhotos - run 1 & 2)
+        env:
+          BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_DMPHOTOS }}
+          BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_DMPHOTOS }}
+          BSKY_FEED_URI: ${{ secrets.BSKY_FEED_URI }}
+        run: |
+          echo "Running DMPhotos reposter - first run"
+          python fotoposter.py > /dev/null 2>&1
+          echo "Waiting 30 minutes before second run..."
+          sleep 1800
+          echo "Running DMPhotos reposter - second run"
+          python fotoposter.py > /dev/null 2>&1
