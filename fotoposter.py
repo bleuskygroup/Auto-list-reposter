@@ -8,138 +8,122 @@ from atproto import Client
 FEED_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.feed.generator/aaaaph4xy7utg"
 MAX_POSTS_PER_RUN = 30
 MAX_POSTS_PER_USER = 2
-DELAY_BETWEEN_POSTS = 2
 LOOKBACK_HOURS = 2
+SEEN_FILE = "seen_posts.txt"  # sla eerder geposte URIs op
 
-def log(msg: str):
-    """Veilige log zonder gevoelige data"""
+# === SLIMME VERTRAGING ===
+def calc_delay(count):
+    if count <= 10:
+        return 2
+    elif count <= 20:
+        return 5
+    else:
+        return 10
+
+def log(msg):
     now = datetime.now().strftime("%H:%M:%S")
     print(f"[{now}] {msg}")
 
-def login(username: str, password: str) -> Client:
-    client = Client()
-    client.login(username, password)
-    log("🔑 Login succesvol.")
-    return client
-
-def get_feed_items(feed_uri: str):
-    """Haalt feeditems op via Bluesky publieke API"""
-    url = f"https://public.api.bsky.app/xrpc/app.bsky.feed.getFeed?feed={feed_uri}"
-    log(f"🌐 Ophalen feed: {url}")
-    try:
-        response = requests.get(url, timeout=15)
-        if response.status_code != 200:
-            log(f"⚠️ Feed request mislukt: {response.status_code}")
-            return []
-        data = response.json()
-        feed = data.get("feed", [])
-        log(f"✅ {len(feed)} items ontvangen van feed.")
-        return feed
-    except Exception as e:
-        log(f"⚠️ Feed ophalen mislukt: {e}")
-        return []
-
-def get_recent_posts(feed_items):
-    """Filter posts van de laatste LOOKBACK_HOURS uren"""
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
-    posts = []
-
-    for item in reversed(feed_items):  # oudste eerst
-        post_data = item.get("post", {})
-        uri = post_data.get("uri")
-        cid = post_data.get("cid")
-        author = post_data.get("author", {}).get("did")
-        record = post_data.get("record", {})
-        created_at = record.get("createdAt")
-
-        # Tijdfilter
-        post_time = None
-        if created_at:
-            try:
-                post_time = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-            except Exception:
-                pass
-
-        if not post_time or post_time >= cutoff:
-            if uri and cid and author:
-                posts.append({"uri": uri, "cid": cid, "author": author})
-
-    return posts
-
-def repost_and_like_feed(client: Client):
-    log("📡 Ophalen feed via publieke API...")
-    feed_items = get_feed_items(FEED_URI)
-    posts = get_recent_posts(feed_items)
-    log(f"Gevonden {len(posts)} geschikte posts voor repost binnen {LOOKBACK_HOURS} uur.")
-
-    if not posts:
-        log("⚠️ Geen geschikte posts gevonden. Misschien ouder dan 2 uur of geen nieuwe content.")
-        return
-
-    seen_uris = set()
-    per_user = {}
-    reposted_count = 0
-
-    for post in posts:
-        if reposted_count >= MAX_POSTS_PER_RUN:
-            break
-
-        author = post["author"]
-        if per_user.get(author, 0) >= MAX_POSTS_PER_USER:
-            continue
-        if post["uri"] in seen_uris:
-            continue
-
-        try:
-            # === Repost ===
-            client.app.bsky.feed.repost.create(
-                repo=client.me.did,
-                record={
-                    "subject": {"uri": post["uri"], "cid": post["cid"]},
-                    "createdAt": client.get_current_time_iso(),
-                    "$type": "app.bsky.feed.repost",
-                },
-            )
-
-            # === Like ===
-            client.app.bsky.feed.like.create(
-                repo=client.me.did,
-                record={
-                    "subject": {"uri": post["uri"], "cid": post["cid"]},
-                    "createdAt": client.get_current_time_iso(),
-                    "$type": "app.bsky.feed.like",
-                },
-            )
-
-            reposted_count += 1
-            per_user[author] = per_user.get(author, 0) + 1
-            seen_uris.add(post["uri"])
-
-            log(f"✅ Repost + like uitgevoerd ({reposted_count}/{MAX_POSTS_PER_RUN})")
-
-            if reposted_count < MAX_POSTS_PER_RUN:
-                time.sleep(DELAY_BETWEEN_POSTS)
-
-        except Exception as e:
-            log(f"⚠️ Fout bij repost/like: {e}")
-
-    log(f"🎯 Klaar: {reposted_count} posts gerepost + geliked.")
-
-def main():
+def login():
     username = os.getenv("BSKY_USERNAME")
     password = os.getenv("BSKY_PASSWORD")
-
     if not username or not password:
-        log("❌ Geen inloggegevens gevonden (BSKY_USERNAME/BSKY_PASSWORD).")
-        return
+        raise ValueError("Geen inloggegevens gevonden in secrets.")
+    client = Client()
+    client.login(username, password)
+    return client
 
+def get_feed_items():
+    url = f"https://public.api.bsky.app/xrpc/app.bsky.feed.getFeed?feed={FEED_URI}"
+    r = requests.get(url, timeout=10)
+    r.raise_for_status()
+    return r.json().get("feed", [])
+
+def get_recent(posts):
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
+    result = []
+    for item in reversed(posts):
+        post = item.get("post", {})
+        record = post.get("record", {})
+        created_at = record.get("createdAt")
+        try:
+            post_time = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except Exception:
+            post_time = None
+        if not post_time or post_time >= cutoff:
+            uri = post.get("uri")
+            cid = post.get("cid")
+            author = post.get("author", {}).get("did")
+            if uri and cid and author:
+                result.append({"uri": uri, "cid": cid, "author": author})
+    return result
+
+def load_seen():
+    if not os.path.exists(SEEN_FILE):
+        return set()
+    with open(SEEN_FILE, "r", encoding="utf-8") as f:
+        return set(line.strip() for line in f if line.strip())
+
+def save_seen(seen):
+    with open(SEEN_FILE, "w", encoding="utf-8") as f:
+        for uri in seen:
+            f.write(uri + "\n")
+
+def main():
+    log("🚀 Start Bluesky fotoposter")
     try:
-        client = login(username, password)
-    except Exception as e:
-        log(f"❌ Inloggen mislukt: {e}")
-        return
+        client = login()
+        feed_items = get_feed_items()
+        posts = get_recent(feed_items)
+        seen = load_seen()
+        log(f"📸 {len(posts)} posts gevonden binnen {LOOKBACK_HOURS} uur")
 
-    repost_and_like_feed(client)
+        reposted = 0
+        per_user = {}
+
+        for post in posts:
+            if reposted >= MAX_POSTS_PER_RUN:
+                break
+            if post["uri"] in seen:
+                continue
+
+            author = post["author"]
+            if per_user.get(author, 0) >= MAX_POSTS_PER_USER:
+                continue
+
+            try:
+                client.app.bsky.feed.repost.create(
+                    repo=client.me.did,
+                    record={
+                        "subject": {"uri": post["uri"], "cid": post["cid"]},
+                        "createdAt": client.get_current_time_iso(),
+                        "$type": "app.bsky.feed.repost",
+                    },
+                )
+                client.app.bsky.feed.like.create(
+                    repo=client.me.did,
+                    record={
+                        "subject": {"uri": post["uri"], "cid": post["cid"]},
+                        "createdAt": client.get_current_time_iso(),
+                        "$type": "app.bsky.feed.like",
+                    },
+                )
+                reposted += 1
+                per_user[author] = per_user.get(author, 0) + 1
+                seen.add(post["uri"])
+
+                delay = calc_delay(reposted)
+                log(f"✅ Reposted + liked ({reposted}) — wacht {delay}s")
+                time.sleep(delay)
+
+            except Exception as e:
+                log(f"⚠️ Fout bij repost: {e}")
+
+        save_seen(seen)
+        log(f"✅ Klaar — {reposted} nieuwe posts gerepost + geliked.")
+
+    except Exception as e:
+        log(f"❌ Fout: {e}")
 
 if __name__ == "__main__":
     main()
