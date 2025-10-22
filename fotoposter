@@ -4,13 +4,11 @@ from datetime import datetime, timedelta, timezone
 from atproto import Client
 
 # === CONFIG ===
+FEED_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.feed.generator/aaaaph4xy7utg"
 MAX_POSTS_PER_RUN = 30          # maximaal aantal reposts per run
 MAX_POSTS_PER_USER = 2          # maximaal aantal reposts per gebruiker
 DELAY_BETWEEN_POSTS = 2         # seconden wachttijd tussen reposts
 LOOKBACK_HOURS = 2              # kijkt 2 uur terug in de feed
-
-# Feed komt uit GitHub Secret (veilig)
-FEED_URI = os.getenv("BSKY_FEED_URI")
 
 def log(msg: str):
     """Interne logfunctie zonder gevoelige data"""
@@ -49,10 +47,6 @@ def get_recent_feed_posts(client: Client, feed_uri: str):
 
 def repost_and_like_feed(client: Client, feed_uri: str):
     """Repost en like recente posts binnen limieten"""
-    if not feed_uri:
-        log("❌ Geen feed ingesteld (BSKY_FEED_URI ontbreekt).")
-        return
-
     log("📡 Ophalen recente posts...")
     posts = get_recent_feed_posts(client, feed_uri)
     log(f"Gevonden {len(posts)} recente posts binnen {LOOKBACK_HOURS} uur.")
@@ -99,7 +93,6 @@ def repost_and_like_feed(client: Client, feed_uri: str):
             log(f"✅ Repost + like uitgevoerd ({reposted_count}/{MAX_POSTS_PER_RUN})")
 
             if reposted_count < MAX_POSTS_PER_RUN:
-                log(f"⏱ Wachten {DELAY_BETWEEN_POSTS}s...")
                 time.sleep(DELAY_BETWEEN_POSTS)
 
         except Exception as e:
