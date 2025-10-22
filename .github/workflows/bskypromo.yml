@@ -27,4 +27,4 @@ jobs:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_PROMO }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_PROMO }}
         run: |
-          python autoposter.py
+          python autoposter.py > /dev/null 2>&1
