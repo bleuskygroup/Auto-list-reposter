@@ -6,7 +6,7 @@ from atproto import Client
 # === CONFIG ===
 MAX_POSTS_PER_RUN = 30          # maximaal aantal reposts per run
 MAX_POSTS_PER_USER = 2          # maximaal aantal reposts per gebruiker
-DELAY_BETWEEN_POSTS = 60        # seconden wachttijd tussen reposts
+DELAY_BETWEEN_POSTS = 2         # seconden wachttijd tussen reposts
 LOOKBACK_HOURS = 2              # kijkt 2 uur terug in de feed
 
 # Feed komt uit GitHub Secret (veilig)
