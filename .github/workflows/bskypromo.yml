@@ -1,8 +1,8 @@
-name: Bluesky Auto Reposter (BskyPromo)
+name: Bluesky Auto Reposter (bskypromo)
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # elke 30 minuten
+    - cron: "*/30 * * * *"  # elke 30 minuten uitvoeren
   workflow_dispatch:        # handmatig starten mogelijk
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
         run: |
           pip install atproto
 
-      - name: 🚀 Run autoposter (BskyPromo)
+      - name: 🚀 Run autoposter for bskypromo
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_PROMO }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_PROMO }}
