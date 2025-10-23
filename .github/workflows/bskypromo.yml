@@ -1,4 +1,4 @@
-name: Bluesky Auto Reposter (bskypromo)
+name: Bluesky Auto Reposter (BskyPromo)
 
 on:
   schedule:
@@ -22,9 +22,9 @@ jobs:
         run: |
           pip install atproto
 
-      - name: 🚀 Run autoposter (feed versie)
+      - name: 🚀 Run autoposter (BskyPromo)
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_PROMO }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_PROMO }}
         run: |
-          python autoposter.py > /dev/null 2>&1
+          python autoposter_promo.py
