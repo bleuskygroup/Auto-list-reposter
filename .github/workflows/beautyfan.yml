@@ -2,7 +2,7 @@ name: Bluesky Auto Reposter (Beautyfan)
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # elke 30 minuten
+    - cron: "*/30 * * * *"  # elke 30 minuten uitvoeren
   workflow_dispatch:        # handmatig starten mogelijk
 
 jobs:
@@ -22,9 +22,9 @@ jobs:
         run: |
           pip install atproto
 
-      - name: 🚀 Run autoposter (Beautyfan)
+      - name: 🚀 Run autoposter for Beautyfan
         env:
           BSKY_USERNAME: ${{ secrets.BSKY_USERNAME_2 }}
           BSKY_PASSWORD: ${{ secrets.BSKY_PASSWORD_2 }}
         run: |
-          python autoposter_promo.py
+          python autoposter_beautyfan.py
