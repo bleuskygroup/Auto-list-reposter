@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 # === CONFIG ===
 FEED_URI = "at://did:plc:jaka644beit3x4vmmg6yysw7/app.bsky.feed.generator/aaaprg6dqhaii"
 MAX_PER_RUN = 50
-MAX_PER_USER = 5
-HOURS_BACK = 8
+MAX_PER_USER = 2
+HOURS_BACK = 2
 
 def log(msg: str):
     """Schrijft logregels zowel naar console als naar lokaal logbestand."""
